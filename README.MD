@@ -65,6 +65,8 @@ As we can see that the change is not even noticeable at the pixel level. The Mod
 
 NOTE : The noise in the photo is increased and if we use any photo editing software and compare it with the original image, then this image will have much more noise than the original image.
 
+Solution for this problem : Never ever upload/share the original image to internet 
+
 ### Todos
 
  - Add support for JPEG Images
