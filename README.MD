@@ -69,6 +69,7 @@ NOTE : The noise in the photo is increased and if we use any photo editing softw
 
  - Add support for JPEG Images
  - Add encryption option
+ - Add auto detection of name of file to be extracted
 
 License
 ----
