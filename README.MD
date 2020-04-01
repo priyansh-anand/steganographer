@@ -65,6 +65,8 @@ a_pixel_with_data   = (0b10010, 0b100001, 0b1011) = (18, 33, 11)
 ```
 As we can see that the change is not even noticeable at the pixel level. The Module do this repeatedly until all our data is saved to the image.
 
+![Data hidden in Raw Image](https://www.pandasecurity.com/mediacenter/src/uploads/2017/12/esteganografia.jpg)
+
 NOTE : The noise in the photo is increased and if we use any photo editing software and compare it with the original image, then this image will have much more noise than the original image.
 
 Solution for this problem : Never ever upload/share the original image to internet 
