@@ -14,6 +14,8 @@ You can use this Module to extract '100k words.txt' from the 'image_with_100k wo
 
 # How it works?
 
+![](https://www.secplicity.org/wp-content/uploads/2019/11/iStock-692786074-960x641.jpg)
+
 It is based on a simple principle that if we change the LSB ( Least Significant Bits ) of every Pixel, then the change will not be significant and will not be noticed by eyes.
 
 So, this Module takes 2 bits of data from the file to be hidden and replaces the last 2 bits of one pixel with those 2 bits, and then move to next pixel.
