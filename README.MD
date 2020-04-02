@@ -11,6 +11,15 @@ max_file_size = ( height_of_image * width_of_image * 6 / 8 ) bytes
 Go and checkout if you can spot the difference between these two images.
 You can use this Module to extract '100k words.txt' from the 'image_with_100k words.png'
 
+# Example
+
+Original Image
+![Original Image](https://i.ibb.co/gPgs2YZ/original-image.png)
+
+Modified Image
+![Modified Image](https://i.ibb.co/K5gM01J/image-with-100k-words.png)
+
+This image has 100k words hidden inside it!
 
 # How it works?
 
