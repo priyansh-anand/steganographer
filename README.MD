@@ -1,6 +1,6 @@
 # Steganography in Python
 
-This Module will hide files inside images ( currenlty PNG ) and export the modified image to disk
+This script will hide files inside images and save the modified image to disk
 
 The maximum size of file which can be hidden inside an image depends on the dimension of the image.
 ```python
@@ -17,7 +17,7 @@ Original Image
 ![Original Image](https://i.ibb.co/gPgs2YZ/original-image.png)
 
 Modified Image
-![Modified Image](https://i.ibb.co/K5gM01J/image-with-100k-words.png)
+![Modified Image](https://i.imgur.com/T2iifFr.png)
 
 This image has 100k words hidden inside it!
 
