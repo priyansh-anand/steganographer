@@ -223,7 +223,7 @@ def main():
             output_file_path = arg
     
     if not (input_file_path and (extract_hidden_file_from_image or file_to_be_hidden_path)):
-        print("Usage: python3 Steganographer.py [-i input_file_path] [-h file_to_hide] [-o ouput_file_path] [-e]")
+        print("Usage: python3 steganographer.py [-i input_file_path] [-h file_to_hide] [-o ouput_file_path] [-e]")
         print("\t-i path to input image file")
         print("\t-h path to file to be hidden \t( if you want to hide a file in an image )")
         print("\t-e extract hidden file\t\t( if you want to extract hidden file from image)")
