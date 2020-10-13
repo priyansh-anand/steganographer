@@ -83,7 +83,6 @@ Solution for this problem : Never ever upload/share the original image to intern
 ### Todos
 
  - Add support for JPEG Images
- - Add encryption option
  - Add auto detection of the name of file to be extracted
 
 License
