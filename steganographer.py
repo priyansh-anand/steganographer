@@ -18,6 +18,8 @@ from PIL import Image
 from getopt import getopt
 from sys import argv
 
+import crypto
+
 def changeLast2Bits(origByte: int, newBits: int) -> int:
     """
     This function replaces the 2 LSBs of the given origByte with newBits
@@ -61,10 +63,20 @@ def deserializeData(data: list) -> bytes:
     
     return bytes(deserializeData)
 
-def hideDataToImage(inputImagePath, fileToHidePath, outputImagePath):
+magicBytes = {
+    "encrypted" : 0x1337c0de,
+    "unencrypted" : 0xdeadc0de
+}
+
+def hideDataToImage(inputImagePath: str, fileToHidePath: str, outputImagePath: str, password: str) -> None:
     """
     This function hides the fileToHidePath file inside the image located at inputImagePath,
     and saves this modified image to outputImagePath.
+
+    Magic bytes:
+
+        * 0x1337c0de: Data is encrypted
+        * 0xdeadc0de: Data is not encrypted
     """
 
     image = Image.open(inputImagePath).convert('RGB')
@@ -75,7 +87,15 @@ def hideDataToImage(inputImagePath, fileToHidePath, outputImagePath):
     data = fp.read()
     print("[*] {} file size : {} bytes".format(fileToHidePath, len(data)))
 
-    data = (0xDEADC0DE).to_bytes(4, byteorder='big') + filesizeToBytes(data) + data
+    if password:
+        data = crypto.encryptData(data, password)
+        print("[*] Encrypted data size: {} bytes".format(len(data)))
+        data = (magicBytes["encrypted"]).to_bytes(4, byteorder='big') + filesizeToBytes(data) + data
+        print("[*] Magic bytes used: {}".format(hex(magicBytes["encrypted"])))
+    else:
+        data = (magicBytes["unencrypted"]).to_bytes(4, byteorder='big') + filesizeToBytes(data) + data
+        print("[*] Magic bytes used: {}".format(hex(magicBytes["unencrypted"])))
+
     if len(data) > (image.size[0] * image.size[1] * 6) // 8:
         print("[*] Maximum hidden file size exceeded")
         print("[*] Maximum hidden file size for this image: {}".format( (image.size[0] * image.size[1] * 6) // 8 ))
@@ -113,7 +133,7 @@ def hideDataToImage(inputImagePath, fileToHidePath, outputImagePath):
     print(f"[+] Saving image to {outputImagePath}")
     image.save(outputImagePath)
 
-def extractDataFromImage(inputImagePath, outputFilePath):
+def extractDataFromImage(inputImagePath: str, outputFilePath: str, password: str) -> None:
     """
     This function extracts the hidden file from inputImagePath image and saves it to outputFilePath
     """
@@ -135,12 +155,18 @@ def extractDataFromImage(inputImagePath, outputFilePath):
             data.append(pixel[1] & 0b11)
             data.append(pixel[2] & 0b11)
 
-    if deserializeData(data)[:4] != bytes.fromhex("deadc0de"):
-        print("[!] Image don't have any hidden data")
+    encrypted = False
+    if deserializeData(data)[:4] == bytes.fromhex(hex(magicBytes["unencrypted"])[2:]):
+        print("[+] Hidden file found in image")
+    elif deserializeData(data)[:4] == bytes.fromhex(hex(magicBytes["encrypted"])[2:]):
+        print("[*] Hidden file is encrypted")
+        encrypted = True
+    else:
+        print("[!] Image don't have any hidden file")
         print("[*] Magic bytes found:    0x{}".format(deserializeData(data)[:4].hex()))
-        print("[*] Magic bytes expected: {}".format("0xdeadc0de"))
+        print("[*] Magic bytes supported: {}".format(", ".join([ hex(x) for x in magicBytes.values()]))) 
         exit()
-
+    
     print("[*] Extracting hidden file from image")
     hiddenDataSize = int.from_bytes(deserializeData(data)[4:16], byteorder='big') * 4
 
@@ -159,6 +185,8 @@ def extractDataFromImage(inputImagePath, outputFilePath):
             data.append(pixel[2] & 0b11)
 
     data = deserializeData(data[48:])
+    if encrypted:
+        data = crypto.decryptData(data, password)
 
     print(f"[+] Saving hidden file to {outputFilePath}")
     print(f"[*] Size of hidden file recovered : {len(data)} bytes")
@@ -169,13 +197,14 @@ def extractDataFromImage(inputImagePath, outputFilePath):
 
 
 def main():
-    options, _ = getopt(argv[1:],"eh:i:o:")
+    options, _ = getopt(argv[1:],"ep:h:i:o:")
 
     inputImagePath = str()
     hiddenFilePath = str()
     outputImagePath = str()
 
     extractionMode = False
+    password = str()
 
     for opt, arg in options:
         if opt == "-i":
@@ -186,16 +215,19 @@ def main():
             extractionMode = True
         elif opt == "-o":
             outputImagePath = arg
+        elif opt == "-p":
+            password = arg
     
     if not (inputImagePath and hiddenFilePath):
-        print("Usage: python3 steganographer.py [-i inputImagePath] [-h hiddenFilePath] [-o outputImagePath] [-e]")
+        print("Usage: python3 steganographer.py [-i inputImagePath] [-h hiddenFilePath] [-o outputImagePath] [-e] [-p password]")
         print("\t-i path to input image file")
         print("\t-h path to (extract/hide) hidden file")
         print("\t-e extract hidden file \t\t\t(optional)")
         print("\t-o path to output image file (PNG only) (optional)")
+        print("\t-p password to encrypt hidden file \t(optional)")
     else:
         if extractionMode:
-            extractDataFromImage(inputImagePath, hiddenFilePath)
+            extractDataFromImage(inputImagePath, hiddenFilePath, password)
         else:
             if not outputImagePath:
                 outputImagePath = "".join(inputImagePath.split(".")[:-1]) + "_steg0.png"
@@ -203,7 +235,7 @@ def main():
                 print("[!] Output image should be a PNG")
                 exit()
 
-            hideDataToImage(inputImagePath, hiddenFilePath, outputImagePath)
+            hideDataToImage(inputImagePath, hiddenFilePath, outputImagePath, password)
 
 if __name__ == '__main__':
     main()
