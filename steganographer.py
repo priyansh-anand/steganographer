@@ -230,6 +230,11 @@ def extractDataFromImage(inputImagePath: str, outputFilePath: str, password: str
         f.close()
 
 def main():
+    """
+    Main function.
+
+    Args:
+    """
     options, _ = getopt(argv[1:],"ep:h:i:o:m:")
 
     inputImagePath = str()
