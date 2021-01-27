@@ -19,7 +19,7 @@ Original Image
 Modified Image
 ![Modified Image](https://i.imgur.com/T2iifFr.png)
 
-This image has 100k words hidden inside it!
+This image has 100k words (a text file) hidden inside it!
 
 # How it works?
 
