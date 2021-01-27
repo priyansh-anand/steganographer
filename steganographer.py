@@ -238,8 +238,7 @@ def extractDataFromImage(inputImagePath: str, outputFilePath: str, password: str
 
 
 def main():
-    options, _ = getopt(argv[1:], "ep:h:i:o:m:")
-
+    options, _ = getopt(argv[1:], "ep:h:i:o:m:", ["menu"])
     inputImagePath = str()
     hiddenFilePath = str()
     outputImagePath = str()
@@ -265,6 +264,9 @@ def main():
             else:
                 hidingMode = ""
 
+        elif opt == "--menu":
+            new_main()
+
     if not (inputImagePath and hiddenFilePath and hidingMode):
         print("Usage: python3 steganographer.py [-i inputImagePath] [-h hiddenFilePath] [-o outputImagePath] [-e] [-p password] -m [mode]")
         print("\t-i path to input image file")
@@ -275,6 +277,8 @@ def main():
         print("\t-m hiding mode (lsb/endian) \t\t(optional, don't use with -e)")
         print("\t\t* lsb mode: hide file iniside each pixel")
         print("\t\t* endian mode: append hidden file at the end of image")
+
+        print("\n[*] To access interactive menu: python3 steganographer.py --menu")
     else:
         if extractionMode:
             extractDataFromImage(inputImagePath, hiddenFilePath, password)
@@ -319,4 +323,4 @@ def new_main():
 
 
 if __name__ == '__main__':
-    new_main()
+    main()
