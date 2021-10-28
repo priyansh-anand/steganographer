@@ -301,8 +301,18 @@ def new_main():
     ch = input("[?] Choose an option: ")
     if ch == "1":
         inputImagePath = input("[?] Enter the input image path: ")
+        inputImageName = inputImagePath.split(".")
+        fileFormat = inputImageName[-1]
+        if (len(inputImageName) > 1):
+            autoName = inputImagePath[:-len(inputImageName[-1]) - 1]
+
         hiddenFilePath = input("[?] Enter the path of file to hide: ")
-        outputImagePath = input("[?] Enter the output image path: ")
+        hiddenFileName = hiddenFilePath.split(".")
+        if (len(hiddenFileName) > 1):
+            autoName = autoName + ' ' + hiddenFilePath[:-len(hiddenFileName[-1]) - 1]
+        autoName = autoName + '.' + fileFormat
+
+        outputImagePath = input(f"[?] Enter the output image path: ({autoName}) ") or autoName
         password = input("[?] Enter password [optional]: ")
 
         print("[#] Encryption methods:")
