@@ -16,6 +16,7 @@
 from PIL import Image
 
 from getopt import getopt
+from os.path import splitext
 from sys import argv
 
 import crypto
@@ -81,9 +82,8 @@ def hideDataToImage(inputImagePath: str, fileToHidePath: str, outputImagePath: s
     This function hides the fileToHidePath file inside the image located at inputImagePath,
     and saves this modified image to outputImagePath.
     """
-    fp = open(fileToHidePath, "rb")
-
-    data = fp.read()
+    with open(fileToHidePath, "rb") as fp:
+        data = fp.read()
     print("[*] {} file size : {} bytes".format(fileToHidePath, len(data)))
 
     if hidingMode == "lsb":
@@ -131,7 +131,7 @@ def hideDataToImage(inputImagePath: str, fileToHidePath: str, outputImagePath: s
                 imageX += 1
 
         if not outputImagePath:
-            outputImagePath = ".".join(inputImagePath.split(".")[:-1]) + "_with_hidden_file" + "." + inputImagePath.split(".")[-1]
+            outputImagePath = splitext(inputImagePath)[0] + "_steg0.png"
 
         print(f"[+] Saving image to {outputImagePath}")
         image.save(outputImagePath)
@@ -266,6 +266,7 @@ def main():
 
         elif opt == "--menu":
             new_main()
+            return
 
     if not (inputImagePath and hiddenFilePath and hidingMode):
         print("Usage: python3 steganographer.py [-i inputImagePath] [-h hiddenFilePath] [-o outputImagePath] [-e] [-p password] -m [mode]")
@@ -284,7 +285,7 @@ def main():
             extractDataFromImage(inputImagePath, hiddenFilePath, password)
         else:
             if not outputImagePath:
-                outputImagePath = "".join(inputImagePath.split(".")[:-1]) + "_steg0.png"
+                outputImagePath = splitext(inputImagePath)[0] + "_steg0.png"
             if not outputImagePath.endswith(".png"):
                 print("[!] Output image should be a PNG")
                 exit()
@@ -309,7 +310,7 @@ def new_main():
         print("\t[1] LSB Mode   : Hide file in the pixels of image")
         print("\t[2] Endian Mode: Append hidden file at the end of image")
         ch = input("[?] Choose an option [default: endian]: ")
-        hidingMode = "lsb" if ch == "lsb" else "endian"
+        hidingMode = "lsb" if ch in ("1", "lsb") else "endian"
 
         hideDataToImage(inputImagePath, hiddenFilePath, outputImagePath, password, hidingMode)
     elif ch == "2":
