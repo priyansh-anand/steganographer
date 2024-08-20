@@ -1,0 +1,49 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "steganographer"
+description = "Hide files inside images"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "Priyansh Anand", email = "pr1y4nsh@protonmail.com" }]
+requires-python = ">=3.9"
+dependencies = [
+    "Pillow>=9.1",
+    "cryptography>=3.1",
+]
+keywords = ["steganography", "lsb", "image", "encryption", "cli"]
+classifiers = [
+    "Environment :: Console",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Topic :: Multimedia :: Graphics",
+    "Topic :: Security :: Cryptography",
+]
+dynamic = ["version"]
+
+[project.optional-dependencies]
+dev = ["pytest>=7", "ruff"]
+
+[project.scripts]
+steganographer = "steganographer.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/priyansh-anand/steganographer"
+Issues = "https://github.com/priyansh-anand/steganographer/issues"
+
+[tool.setuptools.dynamic]
+version = { attr = "steganographer.__version__" }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]

@@ -119,7 +119,7 @@ def _join(crumbs: bytes) -> bytes:
 def _embed(channels: bytes, data: bytes) -> bytes:
     crumbs = _split(data)
     head = channels[: len(crumbs)].translate(_CLEAR)
-    return _or(head, crumbs) + channels[len(crumbs):]
+    return _or(head, crumbs) + channels[len(crumbs) :]
 
 
 def _load_rgb(path: PathLike) -> Image.Image:
@@ -197,7 +197,7 @@ def _read_endian(raw: bytes) -> Optional[tuple]:
     size = int.from_bytes(raw[-HEADER_SIZE:-MAGIC_SIZE], "big")
     if size > len(raw) - HEADER_SIZE:
         return None
-    return fmt, raw[-HEADER_SIZE - size:-HEADER_SIZE]
+    return fmt, raw[-HEADER_SIZE - size : -HEADER_SIZE]
 
 
 def _read_lsb(image_path: PathLike) -> Optional[tuple]:
@@ -218,7 +218,7 @@ def _read_lsb(image_path: PathLike) -> Optional[tuple]:
         return None
 
     end = (HEADER_SIZE + size) * 4
-    return fmt, _join(channels[HEADER_SIZE * 4:end].translate(_LOW))
+    return fmt, _join(channels[HEADER_SIZE * 4 : end].translate(_LOW))
 
 
 def _read(image_path: PathLike) -> tuple:

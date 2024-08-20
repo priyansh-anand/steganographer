@@ -1,2 +1,2 @@
-Pillow
-cryptography
+Pillow>=9.1
+cryptography>=3.1

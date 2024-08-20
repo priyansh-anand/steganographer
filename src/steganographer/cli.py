@@ -2,7 +2,7 @@ import argparse
 import sys
 from getpass import getpass
 from pathlib import Path
-from typing import List, Optional
+from typing import Optional
 
 from . import __version__, core
 from .errors import SteganographerError
@@ -39,7 +39,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("-h", dest="file", metavar="FILE", help="file to hide, or where to save the extracted file")
     parser.add_argument("-o", dest="output", metavar="OUTPUT", help="output image (default: <image>_steg0.png)")
     parser.add_argument("-e", dest="extract", action="store_true", help="extract a hidden file instead of hiding one")
-    parser.add_argument("-m", dest="mode", choices=["lsb", "endian"], default="endian", help="hiding mode (default: endian)")
+    parser.add_argument("-m", dest="mode", choices=["lsb", "endian"], default="endian", help="default: endian")
 
     password = parser.add_mutually_exclusive_group()
     password.add_argument("-p", dest="password", metavar="PASSWORD", help="encrypt/decrypt with this password")
@@ -122,7 +122,7 @@ def menu() -> None:
         print("[!] Wrong choice")
 
 
-def main(argv: Optional[List[str]] = None) -> int:
+def main(argv: Optional[list[str]] = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
 

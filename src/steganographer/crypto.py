@@ -24,7 +24,7 @@ from .errors import DecryptionError
 SALT_SIZE = 16
 
 # ~32 MiB of memory and well under a second on a laptop
-SCRYPT_N = 2 ** 15
+SCRYPT_N = 2**15
 SCRYPT_R = 8
 SCRYPT_P = 1
 

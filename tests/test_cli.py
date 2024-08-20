@@ -1,0 +1,67 @@
+import pytest
+
+from steganographer import inspect
+from steganographer.cli import main
+
+
+@pytest.fixture
+def secret_file(tmp_path, secret):
+    path = tmp_path / "secret.bin"
+    path.write_bytes(secret)
+    return path
+
+
+def test_hide_and_extract(cover, secret_file, tmp_path):
+    out = tmp_path / "out.png"
+    extracted = tmp_path / "extracted.bin"
+
+    assert main(["-i", str(cover), "-h", str(secret_file), "-o", str(out), "-m", "lsb", "-p", "pw"]) == 0
+    assert main(["-e", "-i", str(out), "-h", str(extracted), "-p", "pw"]) == 0
+    assert extracted.read_bytes() == secret_file.read_bytes()
+
+
+def test_default_output_next_to_input(cover, secret_file):
+    assert main(["-i", str(cover), "-h", str(secret_file), "-m", "lsb"]) == 0
+    assert (cover.parent / "cover_steg0.png").exists()
+
+
+def test_prompts_for_password_when_extracting(cover, secret_file, tmp_path, monkeypatch):
+    out = tmp_path / "out.png"
+    main(["-i", str(cover), "-h", str(secret_file), "-o", str(out), "-p", "pw"])
+
+    monkeypatch.setattr("steganographer.cli.getpass", lambda prompt: "pw")
+    assert main(["-e", "-i", str(out), "-h", str(tmp_path / "x.bin")]) == 0
+
+
+def test_mismatched_password_confirmation(cover, secret_file, monkeypatch):
+    answers = iter(["one", "two"])
+    monkeypatch.setattr("steganographer.cli.getpass", lambda prompt: next(answers))
+    assert main(["-i", str(cover), "-h", str(secret_file), "-P"]) == 1
+
+
+def test_wrong_password_exit_code(cover, secret_file, tmp_path, capsys):
+    out = tmp_path / "out.png"
+    main(["-i", str(cover), "-h", str(secret_file), "-o", str(out), "-p", "right"])
+
+    assert main(["-e", "-i", str(out), "-h", str(tmp_path / "x.bin"), "-p", "wrong"]) == 1
+    assert "wrong password" in capsys.readouterr().err
+
+
+def test_info(cover, capsys):
+    assert main(["--info", "-i", str(cover)]) == 0
+    assert "No hidden file" in capsys.readouterr().out
+
+
+def test_usage_without_arguments(capsys):
+    assert main([]) == 2
+    assert "usage" in capsys.readouterr().out
+
+
+def test_menu_lsb_option(cover, secret_file, tmp_path, monkeypatch):
+    out = tmp_path / "menu.png"
+    answers = iter(["1", str(cover), str(secret_file), str(out), "1"])
+    monkeypatch.setattr("builtins.input", lambda prompt: next(answers))
+    monkeypatch.setattr("steganographer.cli.getpass", lambda prompt: "")
+
+    assert main(["--menu"]) == 0
+    assert inspect(out).mode == "lsb"
