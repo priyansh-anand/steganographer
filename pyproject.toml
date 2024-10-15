@@ -24,7 +24,7 @@ classifiers = [
 ]
 dynamic = ["version"]
 
-[project.optional-dependencies]
+[dependency-groups]
 dev = ["pytest>=7", "ruff"]
 
 [project.scripts]
