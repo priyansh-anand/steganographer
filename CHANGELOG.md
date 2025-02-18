@@ -9,6 +9,7 @@
 - Passwords are turned into keys with scrypt and a random salt instead of md5. Images made with older versions
   can still be decrypted.
 - LSB mode is around 4-5x faster on large images.
+- Transparent images keep their alpha channel in lsb mode instead of being flattened to RGB.
 - The mode is detected automatically when extracting.
 - Endian mode no longer requires a `.png` output, it works with any image format.
 - lsb mode accepts BMP and TIFF output as well as PNG, and refuses lossy formats instead of silently

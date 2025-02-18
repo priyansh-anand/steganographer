@@ -100,20 +100,20 @@ is so small that it can't be noticed by eye.
 Each pixel of an RGB image has 3 channels, red, green and blue, each with a value from 0 to 255:
 
 ```python
-a_pixel = (17, 32, 11)     # (RED, GREEN, BLUE)
+a_pixel = (17, 32, 11)  # (RED, GREEN, BLUE)
 ```
 
 Steganographer takes 2 bits of the file to hide and puts them in place of the last 2 bits of a channel, then
 moves to the next channel. Let's hide `0b100111` in `a_pixel`:
 
 ```python
-a_pixel = (0b10001, 0b100000, 0b1011)   # binary representation of a_pixel
+a_pixel = (0b10001, 0b100000, 0b1011)  # binary representation of a_pixel
 
 # RED:   0b10001  -> 0b10010   last 2 bits replaced with 10
 # GREEN: 0b100000 -> 0b100001  last 2 bits replaced with 01
 # BLUE:  0b1011   -> 0b1011    last 2 bits are already 11, nothing changes
 
-a_pixel           = (17, 32, 11)
+a_pixel = (17, 32, 11)
 a_pixel_with_data = (18, 33, 11)
 ```
 
@@ -121,7 +121,7 @@ A channel changes by at most 3 out of 255, which is invisible. Every pixel holds
 that fits is:
 
 ```python
-max_file_size = width * height * 6 // 8 - 12   # bytes
+max_file_size = width * height * 6 // 8 - 12  # bytes
 ```
 
 The 12 bytes are a small header in front of the hidden file: a 4 byte magic number that says which mode and
@@ -129,7 +129,7 @@ encryption were used, and the 8 byte length of the file. `steganographer --info 
 number for an image. Encrypted files take more room: the encrypted data is base64 encoded, so it is about a third
 bigger than the original, plus around 100 bytes.
 
-Images with transparency are converted to RGB, so the alpha channel is dropped.
+Transparent images keep their alpha channel, data is only hidden in the R, G and B values.
 
 ### Encryption
 

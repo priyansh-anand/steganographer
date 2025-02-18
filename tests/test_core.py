@@ -120,3 +120,29 @@ def test_reads_images_made_by_v3(name, mode, encrypted):
     found = steganographer.inspect(path)
     assert (found.mode, found.encrypted, found.format.legacy) == (mode, encrypted, encrypted)
     assert steganographer.reveal(path, password="hunter2") == (FIXTURES / "legacy_secret.txt").read_bytes()
+
+
+@pytest.mark.parametrize("password", [None, "pw"])
+def test_lsb_keeps_transparency(tmp_path, secret, password):
+    cover = tmp_path / "logo.png"
+    image = Image.new("RGBA", (64, 64), (200, 30, 30, 0))
+    image.paste((10, 120, 250, 255), (16, 16, 48, 48))
+    image.save(cover)
+
+    out = steganographer.hide(cover, secret, tmp_path / "out.png", mode="lsb", password=password)
+    result = Image.open(out)
+    assert result.mode == "RGBA"
+    assert result.getchannel("A").tobytes() == image.getchannel("A").tobytes()
+    assert steganographer.reveal(out, password=password) == secret
+
+
+def test_lsb_palette_image_with_transparency(tmp_path):
+    cover = tmp_path / "icon.png"
+    image = Image.new("P", (32, 32), 0)
+    image.putpalette([0, 0, 0, 255, 255, 255] + [0] * 762)
+    image.info["transparency"] = 0
+    image.save(cover, transparency=0)
+
+    out = steganographer.hide(cover, b"hello", tmp_path / "out.png", mode="lsb")
+    assert Image.open(out).mode == "RGBA"
+    assert steganographer.reveal(out) == b"hello"

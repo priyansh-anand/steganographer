@@ -6,8 +6,9 @@ Two modes are supported:
 lsb
     The payload is written into the 2 least significant bits of every
     R, G and B channel, starting from the top left pixel and going row by
-    row. Each pixel carries 6 bits. The image has to be saved losslessly
-    (PNG, BMP or TIFF), otherwise the hidden bits are destroyed.
+    row. Each pixel carries 6 bits. The alpha channel of transparent images
+    is left untouched. The image has to be saved losslessly (PNG, BMP or
+    TIFF), otherwise the hidden bits are destroyed.
 
 endian
     The payload is appended after the end of the image file. Image
@@ -28,6 +29,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Union
 
+import numpy as np
 from PIL import Image
 
 from . import crypto
@@ -84,47 +86,28 @@ class HiddenFile:
         return self.format.encrypted
 
 
-# Lookup tables for bytes.translate. Working on whole byte strings instead of
-# pixel by pixel is what keeps big images fast in pure Python.
-_CRUMB = [bytes((b >> shift) & 0b11 for b in range(256)) for shift in (6, 4, 2, 0)]
-_SHIFT = [bytes(((b & 0b11) << shift) for b in range(256)) for shift in (6, 4, 2, 0)]
-_CLEAR = bytes(b & 0b11111100 for b in range(256))
-_LOW = bytes(b & 0b11 for b in range(256))
-
-
-def _or(*chunks: bytes) -> bytes:
-    """Bytewise OR of equally sized byte strings whose set bits never overlap."""
-    total = 0
-    for chunk in chunks:
-        total |= int.from_bytes(chunk, "big")
-    return total.to_bytes(len(chunks[0]), "big")
-
-
-def _split(data: bytes) -> bytes:
+def _split(data: bytes) -> np.ndarray:
     """Split every byte into four 2 bit values, most significant first."""
-    out = bytearray(len(data) * 4)
-    for i, table in enumerate(_CRUMB):
-        out[i::4] = data.translate(table)
-    return bytes(out)
+    d = np.frombuffer(data, dtype=np.uint8)
+    return np.stack([(d >> 6) & 3, (d >> 4) & 3, (d >> 2) & 3, d & 3], axis=1).reshape(-1)
 
 
-def _join(crumbs: bytes) -> bytes:
+def _join(crumbs: np.ndarray) -> bytes:
     """Inverse of ``_split``."""
-    crumbs = crumbs[: len(crumbs) - len(crumbs) % 4]
-    if not crumbs:
-        return b""
-    return _or(*(crumbs[i::4].translate(table) for i, table in enumerate(_SHIFT)))
+    c = crumbs[: len(crumbs) - len(crumbs) % 4].reshape(-1, 4)
+    return (c[:, 0] << 6 | c[:, 1] << 4 | c[:, 2] << 2 | c[:, 3]).astype(np.uint8).tobytes()
 
 
-def _embed(channels: bytes, data: bytes) -> bytes:
-    crumbs = _split(data)
-    head = channels[: len(crumbs)].translate(_CLEAR)
-    return _or(head, crumbs) + channels[len(crumbs) :]
-
-
-def _load_rgb(path: PathLike) -> Image.Image:
+def _load(path: PathLike) -> Image.Image:
+    """Open an image as RGB, or as RGBA if it has any kind of transparency."""
     with Image.open(path) as image:
-        return image.convert("RGB")
+        transparent = "A" in image.getbands() or "transparency" in image.info
+        return image.convert("RGBA" if transparent else "RGB")
+
+
+def _color_channels(pixels: np.ndarray) -> np.ndarray:
+    """The R, G and B values of every pixel, row by row. Alpha is never touched."""
+    return pixels[..., :3].reshape(-1)
 
 
 def lsb_capacity(width: int, height: int) -> int:
@@ -169,7 +152,7 @@ def hide(
                 f" got {output_path.name}"
             )
 
-        image = _load_rgb(image_path)
+        image = _load(image_path)
         available = lsb_capacity(*image.size)
         if len(data) > available:
             raise CapacityError(
@@ -178,8 +161,13 @@ def hide(
             )
 
         header = fmt.magic.to_bytes(MAGIC_SIZE, "big") + len(data).to_bytes(LENGTH_SIZE, "big")
-        channels = _embed(image.tobytes(), header + data)
-        Image.frombytes("RGB", image.size, channels).save(output_path)
+        crumbs = _split(header + data)
+
+        pixels = np.array(image)
+        channels = _color_channels(pixels)
+        channels[: len(crumbs)] = channels[: len(crumbs)] & 0b11111100 | crumbs
+        pixels[..., :3] = channels.reshape(pixels.shape[:2] + (3,))
+        Image.fromarray(pixels).save(output_path)
     else:
         cover = Path(image_path).read_bytes()
         trailer = len(data).to_bytes(LENGTH_SIZE, "big") + fmt.magic.to_bytes(MAGIC_SIZE, "big")
@@ -202,12 +190,12 @@ def _read_endian(raw: bytes) -> Optional[tuple]:
 
 def _read_lsb(image_path: PathLike) -> Optional[tuple]:
     try:
-        image = _load_rgb(image_path)
+        image = _load(image_path)
     except OSError:
         return None
 
-    channels = image.tobytes()
-    header = _join(channels[: HEADER_SIZE * 4].translate(_LOW))
+    channels = _color_channels(np.asarray(image))
+    header = _join(channels[: HEADER_SIZE * 4] & 3)
     if len(header) < HEADER_SIZE:
         return None
     fmt = _BY_MAGIC.get(int.from_bytes(header[:MAGIC_SIZE], "big"))
@@ -218,7 +206,7 @@ def _read_lsb(image_path: PathLike) -> Optional[tuple]:
         return None
 
     end = (HEADER_SIZE + size) * 4
-    return fmt, _join(channels[HEADER_SIZE * 4 : end].translate(_LOW))
+    return fmt, _join(channels[HEADER_SIZE * 4 : end] & 3)
 
 
 def _read(image_path: PathLike) -> tuple:

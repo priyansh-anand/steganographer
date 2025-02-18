@@ -12,6 +12,7 @@ requires-python = ">=3.9"
 dependencies = [
     "Pillow>=9.1",
     "cryptography>=3.1",
+    "numpy>=1.22",
 ]
 keywords = ["steganography", "lsb", "image", "encryption", "cli"]
 classifiers = [
