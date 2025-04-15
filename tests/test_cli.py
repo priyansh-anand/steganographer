@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 
 from steganographer import inspect
@@ -65,3 +67,23 @@ def test_menu_lsb_option(cover, secret_file, tmp_path, monkeypatch):
 
     assert main(["--menu"]) == 0
     assert inspect(out).mode == "lsb"
+
+
+def test_extract_uses_original_file_name(cover, secret_file, tmp_path, monkeypatch):
+    out = tmp_path / "out.png"
+    main(["-i", str(cover), "-h", str(secret_file), "-o", str(out), "-m", "lsb"])
+
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+    assert main(["-e", "-i", str(out)]) == 0
+    assert (elsewhere / "secret.bin").read_bytes() == secret_file.read_bytes()
+
+    # don't overwrite a file that is already there
+    assert main(["-e", "-i", str(out)]) == 1
+
+
+def test_extract_legacy_image_needs_a_path(capsys):
+    legacy = Path(__file__).parent / "fixtures" / "legacy_lsb.png"
+    assert main(["-e", "-i", str(legacy)]) == 1
+    assert "pass -h" in capsys.readouterr().err

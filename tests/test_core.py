@@ -118,8 +118,11 @@ def test_reads_images_made_by_v3(name, mode, encrypted):
     # these fixtures were made with the original v3 script, password "hunter2"
     path = FIXTURES / name
     found = steganographer.inspect(path)
-    assert (found.mode, found.encrypted, found.format.legacy) == (mode, encrypted, encrypted)
-    assert steganographer.reveal(path, password="hunter2") == (FIXTURES / "legacy_secret.txt").read_bytes()
+    assert (found.mode, found.encrypted, found.format.legacy) == (mode, encrypted, True)
+
+    name, data = steganographer.reveal_file(path, password="hunter2")
+    assert name is None
+    assert data == (FIXTURES / "legacy_secret.txt").read_bytes()
 
 
 @pytest.mark.parametrize("password", [None, "pw"])
@@ -146,3 +149,42 @@ def test_lsb_palette_image_with_transparency(tmp_path):
     out = steganographer.hide(cover, b"hello", tmp_path / "out.png", mode="lsb")
     assert Image.open(out).mode == "RGBA"
     assert steganographer.reveal(out) == b"hello"
+
+
+@pytest.mark.parametrize("mode", ["lsb", "endian"])
+@pytest.mark.parametrize("password", [None, "pw"])
+def test_file_name_is_stored(cover, tmp_path, mode, password):
+    out = steganographer.hide(cover, b"data", tmp_path / "out.png", mode=mode, password=password, filename="notes.txt")
+    assert steganographer.reveal_file(out, password=password) == ("notes.txt", b"data")
+
+
+def test_no_file_name(cover, tmp_path):
+    out = steganographer.hide(cover, b"data", tmp_path / "out.png")
+    assert steganographer.reveal_file(out) == (None, b"data")
+
+
+def test_file_name_is_encrypted_too(cover, tmp_path):
+    out = steganographer.hide(cover, b"data", tmp_path / "out.png", password="pw", filename="bank-details.txt")
+    assert b"bank-details" not in out.read_bytes()
+
+
+def test_only_the_base_name_is_stored(cover, tmp_path):
+    out = steganographer.hide(cover, b"data", tmp_path / "out.png", filename="/home/me/secret/notes.txt")
+    assert steganographer.reveal_file(out).name == "notes.txt"
+
+
+@pytest.mark.parametrize(
+    "stored, expected",
+    [
+        ("notes.txt", "notes.txt"),
+        ("../../.bashrc", ".bashrc"),
+        ("/etc/passwd", "passwd"),
+        ("..\\..\\Windows\\win.ini", "win.ini"),
+        ("..", None),
+        ("dir/", None),
+        ("", None),
+    ],
+)
+def test_crafted_file_names_cant_escape(stored, expected):
+    payload = len(stored.encode()).to_bytes(2, "big") + stored.encode() + b"data"
+    assert core._unpack(payload) == (expected, b"data")

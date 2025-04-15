@@ -21,13 +21,19 @@ Layout of the hidden data::
     lsb     magic (4) || length (8) || payload
     endian  <original image> || payload || length (8) || magic (4)
 
+    payload = name length (2) || file name (utf-8) || file contents
+
+The payload is encrypted as a whole when a password is used, so the file
+name is only visible with the password. Images made by v3 and older store
+just the file contents.
+
 All integers are big endian. The magic number says which mode and which
 encryption scheme was used, see ``Format``.
 """
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Union
+from typing import NamedTuple, Optional, Union
 
 import numpy as np
 from PIL import Image
@@ -40,6 +46,7 @@ PathLike = Union[str, Path]
 MAGIC_SIZE = 4
 LENGTH_SIZE = 8
 HEADER_SIZE = MAGIC_SIZE + LENGTH_SIZE
+NAME_LENGTH_SIZE = 2
 
 LOSSLESS_SUFFIXES = {".png", ".bmp", ".tif", ".tiff"}
 
@@ -49,15 +56,18 @@ class Format:
     magic: int
     mode: str
     encrypted: bool
+    # made by v3 or older: no file name, and md5 as the encryption key
     legacy: bool = False
 
 
 FORMATS = [
-    Format(0xDEADC0DE, "lsb", encrypted=False),
+    Format(0xDEADBEEF, "lsb", encrypted=False),
     Format(0x1337BEEF, "lsb", encrypted=True),
-    Format(0x1337C0DE, "lsb", encrypted=True, legacy=True),
-    Format(0x5AFEC0DE, "endian", encrypted=False),
+    Format(0x5AFEBEEF, "endian", encrypted=False),
     Format(0xBABEBEEF, "endian", encrypted=True),
+    Format(0xDEADC0DE, "lsb", encrypted=False, legacy=True),
+    Format(0x1337C0DE, "lsb", encrypted=True, legacy=True),
+    Format(0x5AFEC0DE, "endian", encrypted=False, legacy=True),
     Format(0xBABEC0DE, "endian", encrypted=True, legacy=True),
 ]
 _BY_MAGIC = {f.magic: f for f in FORMATS}
@@ -86,6 +96,38 @@ class HiddenFile:
         return self.format.encrypted
 
 
+class Revealed(NamedTuple):
+    """A file taken out of an image. ``name`` is None if the image doesn't store one."""
+
+    name: Optional[str]
+    data: bytes
+
+
+def _pack(name: Optional[str], data: bytes) -> bytes:
+    encoded = (name or "").encode()
+    if len(encoded) >= 2 ** (8 * NAME_LENGTH_SIZE):
+        raise ValueError("file name is too long")
+    return len(encoded).to_bytes(NAME_LENGTH_SIZE, "big") + encoded + data
+
+
+def _unpack(payload: bytes) -> Revealed:
+    length = int.from_bytes(payload[:NAME_LENGTH_SIZE], "big")
+    name = payload[NAME_LENGTH_SIZE : NAME_LENGTH_SIZE + length].decode(errors="replace")
+    return Revealed(safe_name(name), payload[NAME_LENGTH_SIZE + length :])
+
+
+def safe_name(name: str) -> Optional[str]:
+    """
+    Strip any directories from a stored file name, so a crafted image can't
+    make us write outside the current directory. Returns None if nothing
+    usable is left.
+    """
+    name = name.replace("\\", "/").rsplit("/", 1)[-1].replace("\0", "").strip()
+    if name in ("", ".", ".."):
+        return None
+    return name
+
+
 def _split(data: bytes) -> np.ndarray:
     """Split every byte into four 2 bit values, most significant first."""
     d = np.frombuffer(data, dtype=np.uint8)
@@ -110,13 +152,21 @@ def _color_channels(pixels: np.ndarray) -> np.ndarray:
     return pixels[..., :3].reshape(-1)
 
 
-def lsb_capacity(width: int, height: int) -> int:
-    """Largest payload (in bytes) that fits in a ``width`` x ``height`` image."""
+def _lsb_room(width: int, height: int) -> int:
+    """Bytes available for the payload in a ``width`` x ``height`` image."""
     return max(width * height * 6 // 8 - HEADER_SIZE, 0)
 
 
+def lsb_capacity(width: int, height: int) -> int:
+    """Largest unencrypted file (in bytes) that fits in a ``width`` x ``height`` image, not counting its name."""
+    return max(_lsb_room(width, height) - NAME_LENGTH_SIZE, 0)
+
+
 def capacity(image_path: PathLike) -> int:
-    """Largest payload (in bytes) that can be hidden in this image with lsb mode."""
+    """
+    Largest unencrypted file (in bytes) that can be hidden in this image with
+    lsb mode. The file name, if stored, takes up room as well.
+    """
     with Image.open(image_path) as image:
         return lsb_capacity(*image.size)
 
@@ -134,14 +184,19 @@ def hide(
     *,
     password: Optional[str] = None,
     mode: str = "endian",
+    filename: Optional[str] = None,
 ) -> Path:
     """
     Hide ``data`` inside the image at ``image_path`` and write the result to
     ``output_path``. Returns the path that was written.
+
+    ``filename`` is stored alongside the data, so ``reveal_file`` can give it
+    back when extracting. Only the last part of the path is kept.
     """
     fmt = _format_for(mode, encrypted=bool(password))
     output_path = Path(output_path) if output_path else default_output_path(image_path, mode)
 
+    data = _pack(safe_name(filename) if filename else None, data)
     if password:
         data = crypto.encrypt(data, password)
 
@@ -153,11 +208,11 @@ def hide(
             )
 
         image = _load(image_path)
-        available = lsb_capacity(*image.size)
+        available = _lsb_room(*image.size)
         if len(data) > available:
             raise CapacityError(
-                f"{len(data)} bytes do not fit in a {image.size[0]}x{image.size[1]} image,"
-                f" the maximum is {available} bytes"
+                f"the file needs {len(data)} bytes but a {image.size[0]}x{image.size[1]} image only has room"
+                f" for {available}, use a bigger image"
             )
 
         header = fmt.magic.to_bytes(MAGIC_SIZE, "big") + len(data).to_bytes(LENGTH_SIZE, "big")
@@ -202,7 +257,7 @@ def _read_lsb(image_path: PathLike) -> Optional[tuple]:
     if fmt is None or fmt.mode != "lsb":
         return None
     size = int.from_bytes(header[MAGIC_SIZE:], "big")
-    if size > lsb_capacity(*image.size):
+    if size > _lsb_room(*image.size):
         return None
 
     end = (HEADER_SIZE + size) * 4
@@ -225,9 +280,16 @@ def inspect(image_path: PathLike) -> Optional[HiddenFile]:
     return HiddenFile(fmt, len(payload))
 
 
-def reveal(image_path: PathLike, *, password: Optional[str] = None) -> bytes:
-    """Return the file hidden inside the image at ``image_path``."""
+def reveal_file(image_path: PathLike, *, password: Optional[str] = None) -> Revealed:
+    """Return the name and contents of the file hidden in the image at ``image_path``."""
     fmt, payload = _read(image_path)
     if fmt.encrypted:
         payload = crypto.decrypt(payload, password or "", legacy=fmt.legacy)
-    return payload
+    if fmt.legacy:
+        return Revealed(None, payload)
+    return _unpack(payload)
+
+
+def reveal(image_path: PathLike, *, password: Optional[str] = None) -> bytes:
+    """Return the contents of the file hidden in the image at ``image_path``."""
+    return reveal_file(image_path, password=password).data

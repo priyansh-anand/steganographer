@@ -15,9 +15,13 @@
 - lsb mode accepts BMP and TIFF output as well as PNG, and refuses lossy formats instead of silently
   writing an image the file can't be recovered from.
 - Errors go to stderr and the command exits with a non-zero status.
+- Because of the stored file name, images made with 4.0 can't be read by v3 or older. Images made with older
+  versions can still be read by 4.0.
 
 ### Added
 
+- The name of the hidden file is stored in the image (encrypted, when using a password), so `-h` can be left out
+  when extracting. Extraction never overwrites an existing file unless you pass `-h` yourself.
 - `-P` to type the password at a prompt instead of passing it on the command line.
 - `--info` to show how much an image can hold and whether something is hidden in it.
 - `--version` and `--help`.

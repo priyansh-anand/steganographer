@@ -9,7 +9,7 @@ from .errors import SteganographerError
 
 USAGE = """\
 steganographer -i IMAGE -h FILE [-o OUTPUT] [-m {lsb,endian}] [-p PASSWORD | -P]
-       steganographer -e -i IMAGE -h OUTPUT [-p PASSWORD | -P]
+       steganographer -e -i IMAGE [-h OUTPUT] [-p PASSWORD | -P]
        steganographer --info -i IMAGE
        steganographer --menu"""
 
@@ -20,7 +20,7 @@ modes:
 
 examples:
   steganographer -i cat.png -h notes.txt -m lsb -P
-  steganographer -e -i cat_steg0.png -h notes.txt
+  steganographer -e -i cat_steg0.png
 """
 
 
@@ -36,7 +36,12 @@ def build_parser() -> argparse.ArgumentParser:
         add_help=False,
     )
     parser.add_argument("-i", dest="image", metavar="IMAGE", help="input image")
-    parser.add_argument("-h", dest="file", metavar="FILE", help="file to hide, or where to save the extracted file")
+    parser.add_argument(
+        "-h",
+        dest="file",
+        metavar="FILE",
+        help="file to hide, or where to save the extracted file (default: its original name)",
+    )
     parser.add_argument("-o", dest="output", metavar="OUTPUT", help="output image (default: <image>_steg0.png)")
     parser.add_argument("-e", dest="extract", action="store_true", help="extract a hidden file instead of hiding one")
     parser.add_argument("-m", dest="mode", choices=["lsb", "endian"], default="endian", help="default: endian")
@@ -65,11 +70,11 @@ def hide(image: str, file: str, output: Optional[str], mode: str, password: Opti
     if mode == "endian" and not password:
         print("[!] Warning: endian mode is easy to detect, consider using a password")
 
-    written = core.hide(image, data, output, password=password, mode=mode)
+    written = core.hide(image, data, output, password=password, mode=mode, filename=Path(file).name)
     print(f"[+] Hidden file saved in {written}")
 
 
-def extract(image: str, output: str, password: Optional[str]) -> None:
+def extract(image: str, output: Optional[str], password: Optional[str]) -> None:
     found = core.inspect(image)
     if found is None:
         raise SteganographerError(f"no hidden file found in {image}")
@@ -80,7 +85,14 @@ def extract(image: str, output: str, password: Optional[str]) -> None:
         if password is None:
             password = ask_password(confirm=False)
 
-    data = core.reveal(image, password=password)
+    name, data = core.reveal_file(image, password=password)
+    if output is None:
+        if name is None:
+            raise SteganographerError("this image doesn't store the file name, pass -h to say where to save it")
+        if Path(name).exists():
+            raise SteganographerError(f"{name} already exists, pass -h to choose where to save it")
+        output = name
+
     Path(output).write_bytes(data)
     print(f"[+] Saved hidden file to {output} ({len(data)} bytes)")
 
@@ -116,7 +128,7 @@ def menu() -> None:
         hide(image, file, output, mode, password)
     elif choice == "2":
         image = input("[?] Enter the input image path: ")
-        output = input("[?] Enter the path for extracted file: ")
+        output = input("[?] Enter the path for extracted file [default: original name]: ") or None
         extract(image, output, None)
     else:
         print("[!] Wrong choice")
@@ -131,7 +143,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             menu()
         elif args.info and args.image:
             info(args.image)
-        elif args.image and args.file:
+        elif args.image and (args.file or args.extract):
             password = args.password
             if args.ask_password:
                 password = ask_password(confirm=not args.extract)

@@ -41,16 +41,16 @@ Hide a file:
 steganographer -i cat.png -h notes.txt -m lsb -P
 ```
 
-Extract it again:
+Extract it again, it is saved under its original name (`notes.txt`):
 
 ```sh
-steganographer -e -i cat_steg0.png -h notes.txt
+steganographer -e -i cat_steg0.png
 ```
 
 | Option | |
 | --- | --- |
 | `-i IMAGE` | input image |
-| `-h FILE` | file to hide, or where to save the extracted file when using `-e` |
+| `-h FILE` | file to hide, or where to save the extracted file when using `-e` (default: its original name) |
 | `-o OUTPUT` | output image, defaults to `<image>_steg0.png` next to the input |
 | `-e` | extract instead of hide |
 | `-m lsb\|endian` | hiding mode, see below (default: `endian`) |
@@ -80,11 +80,16 @@ import steganographer
 steganographer.hide("cat.png", b"meet at noon", "cat_steg0.png", mode="lsb", password="hunter2")
 
 found = steganographer.inspect("cat_steg0.png")
-found.mode, found.encrypted, found.size
-# ('lsb', True, 116)
+found.mode, found.encrypted
+# ('lsb', True)
 
 steganographer.reveal("cat_steg0.png", password="hunter2")
 # b'meet at noon'
+
+# pass filename= to hide() to store a name, and get it back with reveal_file()
+steganographer.hide("cat.png", b"meet at noon", "cat_steg0.png", mode="lsb", filename="plan.txt")
+steganographer.reveal_file("cat_steg0.png")
+# Revealed(name='plan.txt', data=b'meet at noon')
 
 steganographer.capacity("cat.png")  # max bytes that fit with lsb mode
 ```
@@ -121,11 +126,13 @@ A channel changes by at most 3 out of 255, which is invisible. Every pixel holds
 that fits is:
 
 ```python
-max_file_size = width * height * 6 // 8 - 12  # bytes
+max_file_size = width * height * 6 // 8 - 14 - len(file_name)  # bytes
 ```
 
-The 12 bytes are a small header in front of the hidden file: a 4 byte magic number that says which mode and
-encryption were used, and the 8 byte length of the file. `steganographer --info -i image.png` prints the exact
+The 14 bytes are a small header in front of the hidden file: a 4 byte magic number that says which mode and
+encryption were used, the 8 byte length of the data and the 2 byte length of the file name. The name is stored
+so the file can be extracted without having to remember what it was called. When a password is used, the name
+is encrypted along with the contents. `steganographer --info -i image.png` prints the exact
 number for an image. Encrypted files take more room: the encrypted data is base64 encoded, so it is about a third
 bigger than the original, plus around 100 bytes.
 
