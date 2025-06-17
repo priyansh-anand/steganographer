@@ -4,11 +4,16 @@ Hide files inside images, and get them back out.
 Two modes are supported:
 
 lsb
-    The payload is written into the 2 least significant bits of every
-    R, G and B channel, starting from the top left pixel and going row by
-    row. Each pixel carries 6 bits. The alpha channel of transparent images
-    is left untouched. The image has to be saved losslessly (PNG, BMP or
-    TIFF), otherwise the hidden bits are destroyed.
+    The payload is written into the 2 least significant bits of the R, G
+    and B channels. Each pixel carries 6 bits. The alpha channel of
+    transparent images is left untouched. The image has to be saved
+    losslessly (PNG, BMP or TIFF), otherwise the hidden bits are destroyed.
+
+    Without a password the channels are filled in order starting from the
+    top left pixel. With a password the header and the data are spread over
+    the whole image in an order that depends on the password (see
+    ``scatter``), so the image doesn't show that anything is hidden unless
+    you have the password.
 
 endian
     The payload is appended after the end of the image file. Image
@@ -38,7 +43,7 @@ from typing import NamedTuple, Optional, Union
 import numpy as np
 from PIL import Image
 
-from . import crypto
+from . import crypto, scatter
 from .errors import CapacityError, NoHiddenDataError
 
 PathLike = Union[str, Path]
@@ -58,6 +63,10 @@ class Format:
     encrypted: bool
     # made by v3 or older: no file name, and md5 as the encryption key
     legacy: bool = False
+
+    @property
+    def scattered(self) -> bool:
+        return self.mode == "lsb" and self.encrypted and not self.legacy
 
 
 FORMATS = [
@@ -152,6 +161,27 @@ def _color_channels(pixels: np.ndarray) -> np.ndarray:
     return pixels[..., :3].reshape(-1)
 
 
+def _order(password: str, channels: np.ndarray) -> scatter.Permutation:
+    return scatter.Permutation(crypto.order_key(password, scatter.KEY_SIZE), len(channels))
+
+
+def _write_crumbs(channels: np.ndarray, crumbs: np.ndarray, order: Optional[scatter.Permutation]) -> None:
+    if order is None:
+        channels[: len(crumbs)] = channels[: len(crumbs)] & 0b11111100 | crumbs
+        return
+    for start, stop, positions in order.chunks(len(crumbs)):
+        channels[positions] = channels[positions] & 0b11111100 | crumbs[start:stop]
+
+
+def _read_crumbs(channels: np.ndarray, count: int, order: Optional[scatter.Permutation]) -> np.ndarray:
+    if order is None:
+        return channels[:count] & 3
+    out = np.empty(count, dtype=np.uint8)
+    for start, stop, positions in order.chunks(count):
+        out[start:stop] = channels[positions] & 3
+    return out
+
+
 def _lsb_room(width: int, height: int) -> int:
     """Bytes available for the payload in a ``width`` x ``height`` image."""
     return max(width * height * 6 // 8 - HEADER_SIZE, 0)
@@ -220,7 +250,7 @@ def hide(
 
         pixels = np.array(image)
         channels = _color_channels(pixels)
-        channels[: len(crumbs)] = channels[: len(crumbs)] & 0b11111100 | crumbs
+        _write_crumbs(channels, crumbs, _order(password, channels) if fmt.scattered else None)
         pixels[..., :3] = channels.reshape(pixels.shape[:2] + (3,))
         Image.fromarray(pixels).save(output_path)
     else:
@@ -243,38 +273,49 @@ def _read_endian(raw: bytes) -> Optional[tuple]:
     return fmt, raw[-HEADER_SIZE - size : -HEADER_SIZE]
 
 
-def _read_lsb(image_path: PathLike) -> Optional[tuple]:
-    try:
-        image = _load(image_path)
-    except OSError:
+def _read_lsb(channels: np.ndarray, room: int, order: Optional[scatter.Permutation]) -> Optional[tuple]:
+    if len(channels) < HEADER_SIZE * 4:
         return None
-
-    channels = _color_channels(np.asarray(image))
-    header = _join(channels[: HEADER_SIZE * 4] & 3)
-    if len(header) < HEADER_SIZE:
-        return None
+    header = _join(_read_crumbs(channels, HEADER_SIZE * 4, order))
     fmt = _BY_MAGIC.get(int.from_bytes(header[:MAGIC_SIZE], "big"))
-    if fmt is None or fmt.mode != "lsb":
+    if fmt is None or fmt.mode != "lsb" or fmt.scattered != (order is not None):
         return None
     size = int.from_bytes(header[MAGIC_SIZE:], "big")
-    if size > _lsb_room(*image.size):
+    if size > room:
         return None
 
-    end = (HEADER_SIZE + size) * 4
-    return fmt, _join(channels[HEADER_SIZE * 4 : end] & 3)
+    crumbs = _read_crumbs(channels, (HEADER_SIZE + size) * 4, order)
+    return fmt, _join(crumbs[HEADER_SIZE * 4 :])
 
 
-def _read(image_path: PathLike) -> tuple:
-    found = _read_endian(Path(image_path).read_bytes()) or _read_lsb(image_path)
+def _read(image_path: PathLike, password: Optional[str]) -> tuple:
+    found = _read_endian(Path(image_path).read_bytes())
+    if found is None:
+        try:
+            image = _load(image_path)
+        except OSError:
+            image = None
+        if image is not None:
+            channels = _color_channels(np.asarray(image))
+            room = _lsb_room(*image.size)
+            found = _read_lsb(channels, room, None)
+            if found is None and password:
+                found = _read_lsb(channels, room, _order(password, channels))
+
     if found is None:
         raise NoHiddenDataError(f"no hidden file found in {image_path}")
     return found
 
 
-def inspect(image_path: PathLike) -> Optional[HiddenFile]:
-    """Describe what is hidden in the image, or return None if nothing is."""
+def inspect(image_path: PathLike, *, password: Optional[str] = None) -> Optional[HiddenFile]:
+    """
+    Describe what is hidden in the image, or return None if nothing is.
+
+    Files hidden with lsb mode and a password can only be found with the
+    right password.
+    """
     try:
-        fmt, payload = _read(image_path)
+        fmt, payload = _read(image_path, password)
     except NoHiddenDataError:
         return None
     return HiddenFile(fmt, len(payload))
@@ -282,7 +323,7 @@ def inspect(image_path: PathLike) -> Optional[HiddenFile]:
 
 def reveal_file(image_path: PathLike, *, password: Optional[str] = None) -> Revealed:
     """Return the name and contents of the file hidden in the image at ``image_path``."""
-    fmt, payload = _read(image_path)
+    fmt, payload = _read(image_path, password)
     if fmt.encrypted:
         payload = crypto.decrypt(payload, password or "", legacy=fmt.legacy)
     if fmt.legacy:

@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import numpy as np
 import pytest
 from PIL import Image
 
@@ -15,7 +16,7 @@ FIXTURES = Path(__file__).parent / "fixtures"
 def test_roundtrip(cover, tmp_path, secret, mode, password):
     out = steganographer.hide(cover, secret, tmp_path / "out.png", mode=mode, password=password)
 
-    found = steganographer.inspect(out)
+    found = steganographer.inspect(out, password=password)
     assert found.mode == mode
     assert found.encrypted == bool(password)
     assert steganographer.reveal(out, password=password) == secret
@@ -69,11 +70,19 @@ def test_endian_works_with_jpeg(tmp_path, secret):
 
 
 def test_wrong_password(cover, tmp_path, secret):
-    out = steganographer.hide(cover, secret, tmp_path / "out.png", mode="lsb", password="right")
+    out = steganographer.hide(cover, secret, tmp_path / "out.png", mode="endian", password="right")
     with pytest.raises(DecryptionError):
         steganographer.reveal(out, password="wrong")
     with pytest.raises(DecryptionError):
         steganographer.reveal(out)
+
+
+def test_wrong_password_lsb(cover, tmp_path, secret):
+    # the data is scattered with the password, so with the wrong one there's nothing to find
+    out = steganographer.hide(cover, secret, tmp_path / "out.png", mode="lsb", password="right")
+    with pytest.raises(NoHiddenDataError):
+        steganographer.reveal(out, password="wrong")
+    assert steganographer.inspect(out, password="wrong") is None
 
 
 def test_same_password_gives_different_ciphertext(cover, tmp_path, secret):
@@ -188,3 +197,22 @@ def test_only_the_base_name_is_stored(cover, tmp_path):
 def test_crafted_file_names_cant_escape(stored, expected):
     payload = len(stored.encode()).to_bytes(2, "big") + stored.encode() + b"data"
     assert core._unpack(payload) == (expected, b"data")
+
+
+def test_lsb_with_password_is_invisible_without_it(cover, tmp_path):
+    out = steganographer.hide(cover, b"data", tmp_path / "out.png", mode="lsb", password="pw")
+    assert steganographer.inspect(out) is None
+    assert steganographer.inspect(out, password="pw").encrypted
+
+
+def test_lsb_with_password_spreads_over_the_image(tmp_path):
+    cover = tmp_path / "cover.png"
+    Image.new("RGB", (100, 100), (128, 128, 128)).save(cover)
+
+    out = steganographer.hide(cover, b"x" * 100, tmp_path / "out.png", mode="lsb", password="pw")
+    changed = np.flatnonzero(np.asarray(Image.open(out)) != 128)
+
+    # ~250 bytes spread over 30000 channels should reach the bottom of the image,
+    # without a password they would all be in the first 12 rows
+    assert changed.max() > 20000
+    assert changed.min() < 10000

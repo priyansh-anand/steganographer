@@ -10,7 +10,7 @@ from .errors import SteganographerError
 USAGE = """\
 steganographer -i IMAGE -h FILE [-o OUTPUT] [-m {lsb,endian}] [-p PASSWORD | -P]
        steganographer -e -i IMAGE [-h OUTPUT] [-p PASSWORD | -P]
-       steganographer --info -i IMAGE
+       steganographer --info -i IMAGE [-p PASSWORD | -P]
        steganographer --menu"""
 
 EPILOG = """\
@@ -75,9 +75,10 @@ def hide(image: str, file: str, output: Optional[str], mode: str, password: Opti
 
 
 def extract(image: str, output: Optional[str], password: Optional[str]) -> None:
-    found = core.inspect(image)
+    found = core.inspect(image, password=password)
     if found is None:
-        raise SteganographerError(f"no hidden file found in {image}")
+        hint = "" if password else ", if it was hidden with a password pass -p or -P"
+        raise SteganographerError(f"no hidden file found in {image}{hint}")
 
     print(f"[+] Hidden file found in image ({found.mode} mode, {found.size} bytes)")
     if found.encrypted:
@@ -97,9 +98,9 @@ def extract(image: str, output: Optional[str], password: Optional[str]) -> None:
     print(f"[+] Saved hidden file to {output} ({len(data)} bytes)")
 
 
-def info(image: str) -> None:
+def info(image: str, password: Optional[str]) -> None:
     print(f"[*] Capacity in lsb mode: {core.capacity(image)} bytes")
-    found = core.inspect(image)
+    found = core.inspect(image, password=password)
     if found is None:
         print("[*] No hidden file found")
     else:
@@ -141,13 +142,13 @@ def main(argv: Optional[list[str]] = None) -> int:
     try:
         if args.menu:
             menu()
-        elif args.info and args.image:
-            info(args.image)
-        elif args.image and (args.file or args.extract):
+        elif args.image and (args.file or args.extract or args.info):
             password = args.password
             if args.ask_password:
-                password = ask_password(confirm=not args.extract)
-            if args.extract:
+                password = ask_password(confirm=not (args.extract or args.info))
+            if args.info:
+                info(args.image, password)
+            elif args.extract:
                 extract(args.image, args.file, password)
             else:
                 hide(args.image, args.file, args.output, args.mode, password)

@@ -34,6 +34,17 @@ def derive_key(password: str, salt: bytes) -> bytes:
     return base64.urlsafe_b64encode(kdf.derive(password.encode()))
 
 
+def order_key(password: str, size: int) -> bytes:
+    """
+    Key for the order in which lsb mode spreads data over the image. It
+    can't use a random salt, since the salt would have to be stored in the
+    image and we'd need the key to find it, so the salt is fixed and the
+    key only depends on the password.
+    """
+    kdf = Scrypt(salt=b"steganographer lsb order", length=size, n=SCRYPT_N, r=SCRYPT_R, p=SCRYPT_P)
+    return kdf.derive(password.encode())
+
+
 def legacy_key(password: str) -> bytes:
     return base64.urlsafe_b64encode(hashlib.md5(password.encode()).hexdigest().encode())
 

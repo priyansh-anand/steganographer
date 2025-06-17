@@ -20,6 +20,8 @@
 
 ### Added
 
+- With a password, lsb mode spreads the data over the whole image in an order derived from the password, so the
+  image doesn't show that anything is hidden in it without the password.
 - The name of the hidden file is stored in the image (encrypted, when using a password), so `-h` can be left out
   when extracting. Extraction never overwrites an existing file unless you pass `-h` yourself.
 - `-P` to type the password at a prompt instead of passing it on the command line.

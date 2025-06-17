@@ -56,7 +56,7 @@ steganographer -e -i cat_steg0.png
 | `-m lsb\|endian` | hiding mode, see below (default: `endian`) |
 | `-p PASSWORD` | encrypt with this password |
 | `-P` | ask for the password instead, so it doesn't end up in your shell history |
-| `--info` | show how much fits in an image, and whether it already has something hidden |
+| `--info` | show how much fits in an image, and whether it already has something hidden (add `-p`/`-P` for images hidden with a password in lsb mode) |
 | `--menu` | interactive menu |
 
 When extracting you don't need to pass the mode. Steganographer figures out how the file was hidden, and asks
@@ -67,6 +67,10 @@ for the password if it is encrypted.
 **`lsb`** hides the file inside the pixels themselves (see [how it works](#how-it-works)). The image looks
 the same to the eye. The output has to be a lossless format (PNG, BMP or TIFF), because
 JPEG compression would destroy the hidden bits. The input can be anything Pillow can open, including JPEG.
+
+With a password, lsb mode also spreads the data over the whole image in an order that depends on the password,
+instead of filling the pixels from the top. Without the password there is no way to even tell that the image
+has something hidden in it, `--info` and `-e` only find it when given the password.
 
 **`endian`** appends the file after the end of the image data. Image viewers ignore anything after the end of
 the image, so it still opens normally. It works with any format and any file size, but anyone who opens the
@@ -94,7 +98,8 @@ steganographer.reveal_file("cat_steg0.png")
 steganographer.capacity("cat.png")  # max bytes that fit with lsb mode
 ```
 
-`inspect` returns `None` if the image has nothing hidden in it. Errors are raised as `CapacityError`,
+`inspect` returns `None` if the image has nothing hidden in it. For lsb mode with a password, pass `password=` to
+`inspect` as well, otherwise it can't find anything. Errors are raised as `CapacityError`,
 `NoHiddenDataError` and `DecryptionError`, all subclasses of `SteganographerError`.
 
 ## How it works
@@ -144,6 +149,12 @@ With a password, the file is encrypted with [Fernet](https://cryptography.io/en/
 (AES-128-CBC with HMAC-SHA256) before it is hidden. The key is derived from the password with scrypt and a
 random salt, so the same file and password give different output every time.
 
+In lsb mode the password also picks where the data goes. Bit pair `i` of the hidden data is written to channel
+`P(i)`, where `P` is a pseudo random permutation of all the channels in the image, keyed by the password (a
+Feistel network, see [`scatter.py`](src/steganographer/scatter.py)). This means small files don't leave all
+their changes in the first few rows, and the header that says "something is hidden here" can't be found without
+the password.
+
 Versions before 4.0 used the md5 of the password as the key. Images made with them can still be read, but it
 is a good idea to hide those files again with the current version.
 
@@ -151,6 +162,8 @@ is a good idea to hide those files again with the current version.
 
 - Changing the lowest bits adds a bit of noise. Anyone who has the original image, or runs steganalysis tools,
   can tell the image was modified. Never share the original image.
+- Spreading the data out with a password helps most for small files. The more of the image's capacity you use,
+  the more its statistics change, wherever the bits go. Use an image much bigger than the file.
 - Anything that recompresses or resizes the image destroys data hidden with `lsb` mode. Most chat apps and
   social networks do this to uploaded images, so send the image as a file/document instead.
 
