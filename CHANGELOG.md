@@ -4,6 +4,7 @@
 
 ### Changed
 
+- Needs Python 3.12 or newer.
 - The code is now a package under `src/steganographer`, installable with pip or uv, with a `steganographer`
   command and a Python API (`hide`, `reveal`, `inspect`, `capacity`). `python3 steganographer.py` still works.
 - Passwords are turned into keys with scrypt and a random salt instead of md5. Images made with older versions

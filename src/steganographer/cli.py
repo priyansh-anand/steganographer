@@ -2,7 +2,6 @@ import argparse
 import sys
 from getpass import getpass
 from pathlib import Path
-from typing import Optional
 
 from . import __version__, core
 from .errors import SteganographerError
@@ -64,7 +63,7 @@ def ask_password(confirm: bool) -> str:
     return password
 
 
-def hide(image: str, file: str, output: Optional[str], mode: str, password: Optional[str]) -> None:
+def hide(image: str, file: str, output: str | None, mode: str, password: str | None) -> None:
     data = Path(file).read_bytes()
     print(f"[*] {file} file size: {len(data)} bytes")
     if mode == "endian" and not password:
@@ -74,7 +73,7 @@ def hide(image: str, file: str, output: Optional[str], mode: str, password: Opti
     print(f"[+] Hidden file saved in {written}")
 
 
-def extract(image: str, output: Optional[str], password: Optional[str]) -> None:
+def extract(image: str, output: str | None, password: str | None) -> None:
     found = core.inspect(image, password=password)
     if found is None:
         hint = "" if password else ", if it was hidden with a password pass -p or -P"
@@ -98,7 +97,7 @@ def extract(image: str, output: Optional[str], password: Optional[str]) -> None:
     print(f"[+] Saved hidden file to {output} ({len(data)} bytes)")
 
 
-def info(image: str, password: Optional[str]) -> None:
+def info(image: str, password: str | None) -> None:
     print(f"[*] Capacity in lsb mode: {core.capacity(image)} bytes")
     found = core.inspect(image, password=password)
     if found is None:
@@ -135,7 +134,7 @@ def menu() -> None:
         print("[!] Wrong choice")
 
 
-def main(argv: Optional[list[str]] = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
 

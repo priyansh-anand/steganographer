@@ -38,7 +38,7 @@ encryption scheme was used, see ``Format``.
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import NamedTuple, Optional, Union
+from typing import NamedTuple
 
 import numpy as np
 from PIL import Image
@@ -46,7 +46,7 @@ from PIL import Image
 from . import crypto, scatter
 from .errors import CapacityError, NoHiddenDataError
 
-PathLike = Union[str, Path]
+type PathLike = str | Path
 
 MAGIC_SIZE = 4
 LENGTH_SIZE = 8
@@ -108,11 +108,11 @@ class HiddenFile:
 class Revealed(NamedTuple):
     """A file taken out of an image. ``name`` is None if the image doesn't store one."""
 
-    name: Optional[str]
+    name: str | None
     data: bytes
 
 
-def _pack(name: Optional[str], data: bytes) -> bytes:
+def _pack(name: str | None, data: bytes) -> bytes:
     encoded = (name or "").encode()
     if len(encoded) >= 2 ** (8 * NAME_LENGTH_SIZE):
         raise ValueError("file name is too long")
@@ -125,7 +125,7 @@ def _unpack(payload: bytes) -> Revealed:
     return Revealed(safe_name(name), payload[NAME_LENGTH_SIZE + length :])
 
 
-def safe_name(name: str) -> Optional[str]:
+def safe_name(name: str) -> str | None:
     """
     Strip any directories from a stored file name, so a crafted image can't
     make us write outside the current directory. Returns None if nothing
@@ -165,7 +165,7 @@ def _order(password: str, channels: np.ndarray) -> scatter.Permutation:
     return scatter.Permutation(crypto.order_key(password, scatter.KEY_SIZE), len(channels))
 
 
-def _write_crumbs(channels: np.ndarray, crumbs: np.ndarray, order: Optional[scatter.Permutation]) -> None:
+def _write_crumbs(channels: np.ndarray, crumbs: np.ndarray, order: scatter.Permutation | None) -> None:
     if order is None:
         channels[: len(crumbs)] = channels[: len(crumbs)] & 0b11111100 | crumbs
         return
@@ -173,7 +173,7 @@ def _write_crumbs(channels: np.ndarray, crumbs: np.ndarray, order: Optional[scat
         channels[positions] = channels[positions] & 0b11111100 | crumbs[start:stop]
 
 
-def _read_crumbs(channels: np.ndarray, count: int, order: Optional[scatter.Permutation]) -> np.ndarray:
+def _read_crumbs(channels: np.ndarray, count: int, order: scatter.Permutation | None) -> np.ndarray:
     if order is None:
         return channels[:count] & 3
     out = np.empty(count, dtype=np.uint8)
@@ -210,11 +210,11 @@ def default_output_path(image_path: PathLike, mode: str) -> Path:
 def hide(
     image_path: PathLike,
     data: bytes,
-    output_path: Optional[PathLike] = None,
+    output_path: PathLike | None = None,
     *,
-    password: Optional[str] = None,
+    password: str | None = None,
     mode: str = "endian",
-    filename: Optional[str] = None,
+    filename: str | None = None,
 ) -> Path:
     """
     Hide ``data`` inside the image at ``image_path`` and write the result to
@@ -261,7 +261,7 @@ def hide(
     return output_path
 
 
-def _read_endian(raw: bytes) -> Optional[tuple]:
+def _read_endian(raw: bytes) -> tuple | None:
     if len(raw) < HEADER_SIZE:
         return None
     fmt = _BY_MAGIC.get(int.from_bytes(raw[-MAGIC_SIZE:], "big"))
@@ -273,7 +273,7 @@ def _read_endian(raw: bytes) -> Optional[tuple]:
     return fmt, raw[-HEADER_SIZE - size : -HEADER_SIZE]
 
 
-def _read_lsb(channels: np.ndarray, room: int, order: Optional[scatter.Permutation]) -> Optional[tuple]:
+def _read_lsb(channels: np.ndarray, room: int, order: scatter.Permutation | None) -> tuple | None:
     if len(channels) < HEADER_SIZE * 4:
         return None
     header = _join(_read_crumbs(channels, HEADER_SIZE * 4, order))
@@ -288,7 +288,7 @@ def _read_lsb(channels: np.ndarray, room: int, order: Optional[scatter.Permutati
     return fmt, _join(crumbs[HEADER_SIZE * 4 :])
 
 
-def _read(image_path: PathLike, password: Optional[str]) -> tuple:
+def _read(image_path: PathLike, password: str | None) -> tuple:
     found = _read_endian(Path(image_path).read_bytes())
     if found is None:
         try:
@@ -307,7 +307,7 @@ def _read(image_path: PathLike, password: Optional[str]) -> tuple:
     return found
 
 
-def inspect(image_path: PathLike, *, password: Optional[str] = None) -> Optional[HiddenFile]:
+def inspect(image_path: PathLike, *, password: str | None = None) -> HiddenFile | None:
     """
     Describe what is hidden in the image, or return None if nothing is.
 
@@ -321,7 +321,7 @@ def inspect(image_path: PathLike, *, password: Optional[str] = None) -> Optional
     return HiddenFile(fmt, len(payload))
 
 
-def reveal_file(image_path: PathLike, *, password: Optional[str] = None) -> Revealed:
+def reveal_file(image_path: PathLike, *, password: str | None = None) -> Revealed:
     """Return the name and contents of the file hidden in the image at ``image_path``."""
     fmt, payload = _read(image_path, password)
     if fmt.encrypted:
@@ -331,6 +331,6 @@ def reveal_file(image_path: PathLike, *, password: Optional[str] = None) -> Reve
     return _unpack(payload)
 
 
-def reveal(image_path: PathLike, *, password: Optional[str] = None) -> bytes:
+def reveal(image_path: PathLike, *, password: str | None = None) -> bytes:
     """Return the contents of the file hidden in the image at ``image_path``."""
     return reveal_file(image_path, password=password).data

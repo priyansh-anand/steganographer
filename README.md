@@ -12,6 +12,8 @@ Can you spot the difference? The image on the right has a text file with 100,000
 
 ## Install
 
+Needs Python 3.12 or newer.
+
 With [uv](https://docs.astral.sh/uv/):
 
 ```sh

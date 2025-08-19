@@ -34,7 +34,7 @@ def test_lsb_only_touches_two_low_bits(cover, tmp_path, secret):
 
     before = Image.open(cover).tobytes()
     after = Image.open(out).tobytes()
-    assert all(a >> 2 == b >> 2 for a, b in zip(before, after))
+    assert all(a >> 2 == b >> 2 for a, b in zip(before, after, strict=True))
 
 
 def test_lsb_fills_image_exactly(cover, tmp_path):

@@ -8,11 +8,11 @@ description = "Hide files inside images"
 readme = "README.md"
 license = { text = "MIT" }
 authors = [{ name = "Priyansh Anand", email = "pr1y4nsh@protonmail.com" }]
-requires-python = ">=3.9"
+requires-python = ">=3.12"
 dependencies = [
-    "Pillow>=9.1",
-    "cryptography>=3.1",
-    "numpy>=1.22",
+    "Pillow>=10.1",
+    "cryptography>=42",
+    "numpy>=1.26",
 ]
 keywords = ["steganography", "lsb", "image", "encryption", "cli"]
 classifiers = [
@@ -20,6 +20,9 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Multimedia :: Graphics",
     "Topic :: Security :: Cryptography",
 ]
@@ -44,7 +47,7 @@ pythonpath = ["src"]
 
 [tool.ruff]
 line-length = 120
-target-version = "py39"
+target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP"]
