@@ -3,13 +3,14 @@ import sys
 from getpass import getpass
 from pathlib import Path
 
-from . import __version__, core
+from . import __version__, core, signing
 from .errors import SteganographerError
 
 USAGE = """\
-steganographer -i IMAGE -h FILE [-o OUTPUT] [-m {lsb,endian}] [-p PASSWORD | -P]
-       steganographer -e -i IMAGE [-h OUTPUT] [-p PASSWORD | -P]
+steganographer -i IMAGE -h FILE [-o OUTPUT] [-m {lsb,endian}] [-p PASSWORD | -P] [--sign KEY]
+       steganographer -e -i IMAGE [-h OUTPUT] [-p PASSWORD | -P] [--verify PUBKEY]
        steganographer --info -i IMAGE [-p PASSWORD | -P]
+       steganographer --keygen FILE
        steganographer --menu"""
 
 EPILOG = """\
@@ -20,6 +21,10 @@ modes:
 examples:
   steganographer -i cat.png -h notes.txt -m lsb -P
   steganographer -e -i cat_steg0.png
+
+  steganographer -i cat.png -h notes.txt -m lsb -P --sign ~/.ssh/id_ed25519
+  curl -s https://github.com/<user>.keys > friend.pub
+  steganographer -e -i cat_steg0.png -P --verify friend.pub
 """
 
 
@@ -49,6 +54,9 @@ def build_parser() -> argparse.ArgumentParser:
     password.add_argument("-p", dest="password", metavar="PASSWORD", help="encrypt/decrypt with this password")
     password.add_argument("-P", dest="ask_password", action="store_true", help="prompt for the password")
 
+    parser.add_argument("--sign", metavar="KEY", help="sign the hidden file with this Ed25519 private key")
+    parser.add_argument("--verify", metavar="PUBKEY", help="only extract if the file is signed with this public key")
+    parser.add_argument("--keygen", metavar="FILE", help="create an Ed25519 key pair in FILE and FILE.pub")
     parser.add_argument("--info", action="store_true", help="show capacity and whether IMAGE has a hidden file")
     parser.add_argument("--menu", action="store_true", help="interactive menu")
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
@@ -63,17 +71,40 @@ def ask_password(confirm: bool) -> str:
     return password
 
 
-def hide(image: str, file: str, output: str | None, mode: str, password: str | None) -> None:
+def load_signing_key(path: str):
+    try:
+        return signing.load_private_key(path)
+    except signing.PassphraseRequired:
+        return signing.load_private_key(path, getpass(f"[?] Passphrase for {path}: "))
+
+
+def keygen(path: str) -> None:
+    passphrase = getpass("[?] Passphrase for the new key [optional]: ")
+    if passphrase and getpass("[?] Repeat passphrase: ") != passphrase:
+        raise SteganographerError("passphrases do not match")
+
+    key = signing.generate(path, passphrase or None)
+    print(f"[+] Private key saved to {path}, keep it to yourself")
+    print(f"[+] Public key saved to {path}.pub, give it to whoever should check your signature")
+    print(f"[*] Fingerprint: {signing.fingerprint(key.public_key())}")
+
+
+def hide(
+    image: str, file: str, output: str | None, mode: str, password: str | None, sign_key: str | None = None
+) -> None:
     data = Path(file).read_bytes()
     print(f"[*] {file} file size: {len(data)} bytes")
     if mode == "endian" and not password:
         print("[!] Warning: endian mode is easy to detect, consider using a password")
 
-    written = core.hide(image, data, output, password=password, mode=mode, filename=Path(file).name)
+    key = load_signing_key(sign_key) if sign_key else None
+    written = core.hide(image, data, output, password=password, mode=mode, filename=Path(file).name, sign_with=key)
+    if key:
+        print(f"[*] Signed with {signing.fingerprint(key.public_key())}")
     print(f"[+] Hidden file saved in {written}")
 
 
-def extract(image: str, output: str | None, password: str | None) -> None:
+def extract(image: str, output: str | None, password: str | None, verify_key: str | None = None) -> None:
     found = core.inspect(image, password=password)
     if found is None:
         hint = "" if password else ", if it was hidden with a password pass -p or -P"
@@ -85,7 +116,14 @@ def extract(image: str, output: str | None, password: str | None) -> None:
         if password is None:
             password = ask_password(confirm=False)
 
-    name, data = core.reveal_file(image, password=password)
+    expected = signing.load_public_key(verify_key) if verify_key else None
+    name, data, signer = core.reveal_file(image, password=password, signed_by=expected)
+    if signer:
+        verified = " (matches the key you gave)" if expected else ""
+        print(f"[+] Signed by {signing.fingerprint(signer)}{verified}")
+    else:
+        print("[*] Not signed")
+
     if output is None:
         if name is None:
             raise SteganographerError("this image doesn't store the file name, pass -h to say where to save it")
@@ -141,6 +179,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.menu:
             menu()
+        elif args.keygen:
+            keygen(args.keygen)
         elif args.image and (args.file or args.extract or args.info):
             password = args.password
             if args.ask_password:
@@ -148,9 +188,9 @@ def main(argv: list[str] | None = None) -> int:
             if args.info:
                 info(args.image, password)
             elif args.extract:
-                extract(args.image, args.file, password)
+                extract(args.image, args.file, password, args.verify)
             else:
-                hide(args.image, args.file, args.output, args.mode, password)
+                hide(args.image, args.file, args.output, args.mode, password, args.sign)
         else:
             parser.print_usage()
             print("\nRun with --help to see all options.")

@@ -26,11 +26,15 @@ Layout of the hidden data::
     lsb     magic (4) || length (8) || payload
     endian  <original image> || payload || length (8) || magic (4)
 
-    payload = name length (2) || file name (utf-8) || file contents
+    payload = flags (1) || name length (2) || file name (utf-8)
+              || [signer public key (32) || signature (64)] || file contents
+
+The signer's key and signature are only there if the ``signed`` flag is
+set. The signature covers the name and the contents, see ``signing``.
 
 The payload is encrypted as a whole when a password is used, so the file
-name is only visible with the password. Images made by v3 and older store
-just the file contents.
+name and the signer are only visible with the password. Images made by v3
+and older store just the file contents.
 
 All integers are big endian. The magic number says which mode and which
 encryption scheme was used, see ``Format``.
@@ -41,17 +45,20 @@ from pathlib import Path
 from typing import NamedTuple
 
 import numpy as np
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
 from PIL import Image
 
-from . import crypto, scatter
-from .errors import CapacityError, NoHiddenDataError
+from . import crypto, scatter, signing
+from .errors import CapacityError, NoHiddenDataError, SignatureError, SteganographerError
 
 type PathLike = str | Path
 
 MAGIC_SIZE = 4
 LENGTH_SIZE = 8
 HEADER_SIZE = MAGIC_SIZE + LENGTH_SIZE
+FLAGS_SIZE = 1
 NAME_LENGTH_SIZE = 2
+SIGNED = 0b1
 
 LOSSLESS_SUFFIXES = {".png", ".bmp", ".tif", ".tiff"}
 
@@ -106,23 +113,42 @@ class HiddenFile:
 
 
 class Revealed(NamedTuple):
-    """A file taken out of an image. ``name`` is None if the image doesn't store one."""
+    """
+    A file taken out of an image. ``name`` is None if the image doesn't
+    store one. ``signer`` is the raw public key of whoever signed it, the
+    signature has already been checked.
+    """
 
     name: str | None
     data: bytes
+    signer: bytes | None = None
 
 
-def _pack(name: str | None, data: bytes) -> bytes:
+def _pack(name: str | None, data: bytes, sign_with: Ed25519PrivateKey | None = None) -> bytes:
     encoded = (name or "").encode()
     if len(encoded) >= 2 ** (8 * NAME_LENGTH_SIZE):
         raise ValueError("file name is too long")
-    return len(encoded).to_bytes(NAME_LENGTH_SIZE, "big") + encoded + data
+    named = len(encoded).to_bytes(NAME_LENGTH_SIZE, "big") + encoded
+
+    if sign_with is None:
+        return bytes([0]) + named + data
+    return bytes([SIGNED]) + named + signing.sign(sign_with, named + data) + data
 
 
 def _unpack(payload: bytes) -> Revealed:
-    length = int.from_bytes(payload[:NAME_LENGTH_SIZE], "big")
-    name = payload[NAME_LENGTH_SIZE : NAME_LENGTH_SIZE + length].decode(errors="replace")
-    return Revealed(safe_name(name), payload[NAME_LENGTH_SIZE + length :])
+    flags, rest = payload[0], payload[FLAGS_SIZE:]
+    length = int.from_bytes(rest[:NAME_LENGTH_SIZE], "big")
+    named, rest = rest[: NAME_LENGTH_SIZE + length], rest[NAME_LENGTH_SIZE + length :]
+    name = safe_name(named[NAME_LENGTH_SIZE:].decode(errors="replace"))
+
+    if not flags & SIGNED:
+        return Revealed(name, rest)
+
+    public_key = rest[: signing.PUBLIC_KEY_SIZE]
+    signature = rest[signing.PUBLIC_KEY_SIZE : signing.PUBLIC_KEY_SIZE + signing.SIGNATURE_SIZE]
+    data = rest[signing.PUBLIC_KEY_SIZE + signing.SIGNATURE_SIZE :]
+    signing.verify(public_key, signature, named + data)
+    return Revealed(name, data, public_key)
 
 
 def safe_name(name: str) -> str | None:
@@ -189,7 +215,7 @@ def _lsb_room(width: int, height: int) -> int:
 
 def lsb_capacity(width: int, height: int) -> int:
     """Largest unencrypted file (in bytes) that fits in a ``width`` x ``height`` image, not counting its name."""
-    return max(_lsb_room(width, height) - NAME_LENGTH_SIZE, 0)
+    return max(_lsb_room(width, height) - FLAGS_SIZE - NAME_LENGTH_SIZE, 0)
 
 
 def capacity(image_path: PathLike) -> int:
@@ -215,6 +241,7 @@ def hide(
     password: str | None = None,
     mode: str = "endian",
     filename: str | None = None,
+    sign_with: Ed25519PrivateKey | None = None,
 ) -> Path:
     """
     Hide ``data`` inside the image at ``image_path`` and write the result to
@@ -222,11 +249,14 @@ def hide(
 
     ``filename`` is stored alongside the data, so ``reveal_file`` can give it
     back when extracting. Only the last part of the path is kept.
+
+    ``sign_with`` signs the name and contents with an Ed25519 key (see
+    ``signing.load_private_key``).
     """
     fmt = _format_for(mode, encrypted=bool(password))
     output_path = Path(output_path) if output_path else default_output_path(image_path, mode)
 
-    data = _pack(safe_name(filename) if filename else None, data)
+    data = _pack(safe_name(filename) if filename else None, data, sign_with)
     if password:
         data = crypto.encrypt(data, password)
 
@@ -321,14 +351,37 @@ def inspect(image_path: PathLike, *, password: str | None = None) -> HiddenFile 
     return HiddenFile(fmt, len(payload))
 
 
-def reveal_file(image_path: PathLike, *, password: str | None = None) -> Revealed:
-    """Return the name and contents of the file hidden in the image at ``image_path``."""
+def reveal_file(
+    image_path: PathLike,
+    *,
+    password: str | None = None,
+    signed_by: Ed25519PublicKey | None = None,
+) -> Revealed:
+    """
+    Return the name and contents of the file hidden in the image at
+    ``image_path``.
+
+    If the file is signed the signature is always checked, and
+    ``SignatureError`` is raised if it doesn't match. Pass ``signed_by`` to
+    also require that it was signed with that key.
+    """
     fmt, payload = _read(image_path, password)
     if fmt.encrypted:
         payload = crypto.decrypt(payload, password or "", legacy=fmt.legacy)
     if fmt.legacy:
-        return Revealed(None, payload)
-    return _unpack(payload)
+        revealed = Revealed(None, payload)
+    else:
+        try:
+            revealed = _unpack(payload)
+        except IndexError:
+            raise SteganographerError("the hidden data is corrupted") from None
+
+    if signed_by is not None:
+        if revealed.signer is None:
+            raise SignatureError("the file is not signed")
+        if revealed.signer != signing.raw(signed_by):
+            raise SignatureError(f"the file is signed by a different key ({signing.fingerprint(revealed.signer)})")
+    return revealed
 
 
 def reveal(image_path: PathLike, *, password: str | None = None) -> bytes:

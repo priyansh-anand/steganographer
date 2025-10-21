@@ -11,6 +11,7 @@ authors = [{ name = "Priyansh Anand", email = "pr1y4nsh@protonmail.com" }]
 requires-python = ">=3.12"
 dependencies = [
     "Pillow>=10.1",
+    "bcrypt>=4.1",
     "cryptography>=42",
     "numpy>=1.26",
 ]

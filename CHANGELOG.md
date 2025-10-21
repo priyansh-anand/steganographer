@@ -21,6 +21,8 @@
 
 ### Added
 
+- `--sign KEY` signs the hidden file with an Ed25519 key (existing SSH keys work), and `--verify PUBKEY` only
+  extracts it if the signature matches. `--keygen` creates a new key pair.
 - With a password, lsb mode spreads the data over the whole image in an order derived from the password, so the
   image doesn't show that anything is hidden in it without the password.
 - The name of the hidden file is stored in the image (encrypted, when using a password), so `-h` can be left out

@@ -17,6 +17,7 @@ from .errors import (  # noqa: E402
     CapacityError,
     DecryptionError,
     NoHiddenDataError,
+    SignatureError,
     SteganographerError,
 )
 
@@ -26,6 +27,7 @@ __all__ = [
     "HiddenFile",
     "NoHiddenDataError",
     "Revealed",
+    "SignatureError",
     "SteganographerError",
     "capacity",
     "hide",

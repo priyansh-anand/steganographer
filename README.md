@@ -78,6 +78,32 @@ has something hidden in it, `--info` and `-e` only find it when given the passwo
 the image, so it still opens normally. It works with any format and any file size, but anyone who opens the
 image in a hex editor will see it, so always use a password with this mode.
 
+## Signing
+
+A password keeps the file secret, but it doesn't tell the person extracting it who hid it, or whether someone
+changed it on the way. For that you can sign it with an Ed25519 key. Your existing SSH key works:
+
+```sh
+steganographer -i cat.png -h plan.txt -m lsb -P --sign ~/.ssh/id_ed25519
+```
+
+The other side checks the signature against your public key. GitHub publishes everyone's public keys, so they
+don't even need to ask you for it:
+
+```sh
+curl -s https://github.com/<your-username>.keys > you.pub
+steganographer -e -i cat_steg0.png -P --verify you.pub
+```
+
+With `--verify`, the file is only saved if it was signed by that key and wasn't modified. Without it, a signed
+file is still checked and the signer's fingerprint is printed, in the same format as `ssh-keygen -l`.
+
+No SSH key? `steganographer --keygen mykey` creates `mykey` and `mykey.pub`, in the same format ssh-keygen
+uses. Only Ed25519 keys are supported, RSA keys are not.
+
+The signature covers the file name and the contents. When a password is used, the signature is encrypted
+along with the file, so nobody without the password can see who signed it.
+
 ## Using it from Python
 
 ```python
@@ -98,11 +124,18 @@ steganographer.reveal_file("cat_steg0.png")
 # Revealed(name='plan.txt', data=b'meet at noon')
 
 steganographer.capacity("cat.png")  # max bytes that fit with lsb mode
+
+# signing
+from steganographer import signing
+
+key = signing.load_private_key("/home/me/.ssh/id_ed25519", passphrase="...")
+steganographer.hide("cat.png", b"meet at noon", "cat_steg0.png", mode="lsb", sign_with=key)
+steganographer.reveal_file("cat_steg0.png", signed_by=signing.load_public_key("friend.pub"))
 ```
 
 `inspect` returns `None` if the image has nothing hidden in it. For lsb mode with a password, pass `password=` to
 `inspect` as well, otherwise it can't find anything. Errors are raised as `CapacityError`,
-`NoHiddenDataError` and `DecryptionError`, all subclasses of `SteganographerError`.
+`NoHiddenDataError`, `DecryptionError` and `SignatureError`, all subclasses of `SteganographerError`.
 
 ## How it works
 
@@ -133,11 +166,11 @@ A channel changes by at most 3 out of 255, which is invisible. Every pixel holds
 that fits is:
 
 ```python
-max_file_size = width * height * 6 // 8 - 14 - len(file_name)  # bytes
+max_file_size = width * height * 6 // 8 - 15 - len(file_name)  # bytes
 ```
 
-The 14 bytes are a small header in front of the hidden file: a 4 byte magic number that says which mode and
-encryption were used, the 8 byte length of the data and the 2 byte length of the file name. The name is stored
+The 15 bytes are a small header in front of the hidden file: a 4 byte magic number that says which mode and
+encryption were used, the 8 byte length of the data, 1 byte of flags and the 2 byte length of the file name. The name is stored
 so the file can be extracted without having to remember what it was called. When a password is used, the name
 is encrypted along with the contents. `steganographer --info -i image.png` prints the exact
 number for an image. Encrypted files take more room: the encrypted data is base64 encoded, so it is about a third

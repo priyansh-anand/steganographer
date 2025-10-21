@@ -12,3 +12,7 @@ class NoHiddenDataError(SteganographerError):
 
 class DecryptionError(SteganographerError):
     """Wrong password, or the hidden data is corrupted."""
+
+
+class SignatureError(SteganographerError):
+    """The file is signed but the signature is invalid, or it isn't signed by the expected key."""

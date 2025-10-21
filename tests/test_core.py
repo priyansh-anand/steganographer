@@ -129,9 +129,9 @@ def test_reads_images_made_by_v3(name, mode, encrypted):
     found = steganographer.inspect(path)
     assert (found.mode, found.encrypted, found.format.legacy) == (mode, encrypted, True)
 
-    name, data = steganographer.reveal_file(path, password="hunter2")
-    assert name is None
-    assert data == (FIXTURES / "legacy_secret.txt").read_bytes()
+    revealed = steganographer.reveal_file(path, password="hunter2")
+    assert revealed.name is None
+    assert revealed.data == (FIXTURES / "legacy_secret.txt").read_bytes()
 
 
 @pytest.mark.parametrize("password", [None, "pw"])
@@ -164,12 +164,12 @@ def test_lsb_palette_image_with_transparency(tmp_path):
 @pytest.mark.parametrize("password", [None, "pw"])
 def test_file_name_is_stored(cover, tmp_path, mode, password):
     out = steganographer.hide(cover, b"data", tmp_path / "out.png", mode=mode, password=password, filename="notes.txt")
-    assert steganographer.reveal_file(out, password=password) == ("notes.txt", b"data")
+    assert steganographer.reveal_file(out, password=password) == ("notes.txt", b"data", None)
 
 
 def test_no_file_name(cover, tmp_path):
     out = steganographer.hide(cover, b"data", tmp_path / "out.png")
-    assert steganographer.reveal_file(out) == (None, b"data")
+    assert steganographer.reveal_file(out) == (None, b"data", None)
 
 
 def test_file_name_is_encrypted_too(cover, tmp_path):
@@ -195,8 +195,8 @@ def test_only_the_base_name_is_stored(cover, tmp_path):
     ],
 )
 def test_crafted_file_names_cant_escape(stored, expected):
-    payload = len(stored.encode()).to_bytes(2, "big") + stored.encode() + b"data"
-    assert core._unpack(payload) == (expected, b"data")
+    payload = b"\0" + len(stored.encode()).to_bytes(2, "big") + stored.encode() + b"data"
+    assert core._unpack(payload) == (expected, b"data", None)
 
 
 def test_lsb_with_password_is_invisible_without_it(cover, tmp_path):
