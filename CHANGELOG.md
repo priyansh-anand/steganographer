@@ -21,6 +21,10 @@
 
 ### Added
 
+- `--decoy FILE --decoy-password PASSWORD` hides a second, decoy file in the same lsb image, so you have
+  something to hand over if you're ever pressured to reveal what's hidden while the real file stays invisible.
+  Works the same way a VeraCrypt hidden volume does, see the README for how and its limits. New `fec` and
+  `deniable` modules, `hide_deniable`/`reveal_decoy` in the Python API.
 - `--sign KEY` signs the hidden file with an Ed25519 key (existing SSH keys work), and `--verify PUBKEY` only
   extracts it if the signature matches. `--keygen` creates a new key pair.
 - With a password, lsb mode spreads the data over the whole image in an order derived from the password, so the

@@ -2,3 +2,4 @@ Pillow>=10.1
 bcrypt>=4.1
 cryptography>=42
 numpy>=1.26
+reedsolo>=1.7

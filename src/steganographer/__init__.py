@@ -13,6 +13,7 @@ Written by Priyansh Anand - https://github.com/priyansh-anand/steganographer
 __version__ = "4.0.0"
 
 from .core import HiddenFile, Revealed, capacity, hide, inspect, reveal, reveal_file  # noqa: E402
+from .deniable import hide_deniable, reveal_decoy  # noqa: E402
 from .errors import (  # noqa: E402
     CapacityError,
     DecryptionError,
@@ -31,7 +32,9 @@ __all__ = [
     "SteganographerError",
     "capacity",
     "hide",
+    "hide_deniable",
     "inspect",
     "reveal",
+    "reveal_decoy",
     "reveal_file",
 ]

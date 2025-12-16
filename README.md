@@ -104,6 +104,39 @@ uses. Only Ed25519 keys are supported, RSA keys are not.
 The signature covers the file name and the contents. When a password is used, the signature is encrypted
 along with the file, so nobody without the password can see who signed it.
 
+## Deniable hiding
+
+`--decoy` hides two files in the same image under two different passwords: a decoy you can hand over if you're
+ever pressured to reveal what's hidden, and a real file that stays invisible without its own password. This
+works the same way a [VeraCrypt hidden volume](https://veracrypt.eu) does.
+
+```sh
+steganographer -i cat.png -h plan.txt -p realpw --decoy vacation.txt --decoy-password decoypw
+```
+
+Extraction needs nothing special, the same `-e` command finds whichever file matches the password you give it:
+
+```sh
+steganographer -e -i cat_steg0.png -p decoypw   # gets vacation.txt
+steganographer -e -i cat_steg0.png -p realpw    # gets plan.txt
+```
+
+The decoy is written first, and the real file is written on top of it in lsb mode's normal scattered order (see
+[Encryption](#encryption)). Since the two passwords give independent, unrelated layouts, they land on some of
+the same pixels, and the real file always wins there since nothing is written after it. The decoy carries
+[Reed-Solomon](https://en.wikipedia.org/wiki/Reed%E2%80%93Solomon_error_correction) parity so it survives that
+damage, the same kind of error correction CDs and QR codes use.
+
+This only works up to a point: **keep the real file under about 2-3% of the image's `--info` capacity** for the
+decoy to reliably survive being written on top of. Both files are always read back and checked before anything
+is written to disk, so `--decoy` never produces an image with an unknown chance of losing the decoy later --
+past that point it refuses outright and tells you to use a bigger image or smaller files, rather than silently
+gambling on it. There's no way to tune around this: it comes from the same 2 bits per channel that keeps lsb
+mode's changes invisible in the first place, see [`fec.py`](src/steganographer/fec.py) for the actual numbers.
+
+Nothing marks the image as carrying a decoy. The real layer, byte for byte, is exactly what you'd get from an
+ordinary `steganographer -i ... -h ... -p realpw` with no `--decoy` at all.
+
 ## Using it from Python
 
 ```python
@@ -131,6 +164,18 @@ from steganographer import signing
 key = signing.load_private_key("/home/me/.ssh/id_ed25519", passphrase="...")
 steganographer.hide("cat.png", b"meet at noon", "cat_steg0.png", mode="lsb", sign_with=key)
 steganographer.reveal_file("cat_steg0.png", signed_by=signing.load_public_key("friend.pub"))
+
+# deniable hiding
+steganographer.hide_deniable(
+    "cat.png",
+    b"holiday photos",
+    "decoypw",
+    b"the real plan",
+    "realpw",
+    "cat_steg0.png",
+)
+steganographer.reveal_decoy("cat_steg0.png", "decoypw")  # (None, b'holiday photos')
+steganographer.reveal("cat_steg0.png", password="realpw")  # b'the real plan'
 ```
 
 `inspect` returns `None` if the image has nothing hidden in it. For lsb mode with a password, pass `password=` to

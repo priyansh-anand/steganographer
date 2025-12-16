@@ -3,11 +3,12 @@ import sys
 from getpass import getpass
 from pathlib import Path
 
-from . import __version__, core, signing
+from . import __version__, core, deniable, signing
 from .errors import SteganographerError
 
 USAGE = """\
 steganographer -i IMAGE -h FILE [-o OUTPUT] [-m {lsb,endian}] [-p PASSWORD | -P] [--sign KEY]
+       steganographer -i IMAGE -h FILE -p PASSWORD --decoy FILE [--decoy-password PASSWORD]
        steganographer -e -i IMAGE [-h OUTPUT] [-p PASSWORD | -P] [--verify PUBKEY]
        steganographer --info -i IMAGE [-p PASSWORD | -P]
        steganographer --keygen FILE
@@ -25,6 +26,10 @@ examples:
   steganographer -i cat.png -h notes.txt -m lsb -P --sign ~/.ssh/id_ed25519
   curl -s https://github.com/<user>.keys > friend.pub
   steganographer -e -i cat_steg0.png -P --verify friend.pub
+
+  steganographer -i cat.png -h plan.txt -p realpw --decoy vacation.txt --decoy-password decoypw
+  steganographer -e -i cat_steg0.png -p decoypw    # gets vacation.txt back
+  steganographer -e -i cat_steg0.png -p realpw     # gets plan.txt back
 """
 
 
@@ -48,12 +53,19 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("-o", dest="output", metavar="OUTPUT", help="output image (default: <image>_steg0.png)")
     parser.add_argument("-e", dest="extract", action="store_true", help="extract a hidden file instead of hiding one")
-    parser.add_argument("-m", dest="mode", choices=["lsb", "endian"], default="endian", help="default: endian")
+    parser.add_argument("-m", dest="mode", choices=["lsb", "endian"], default=None, help="default: endian")
 
     password = parser.add_mutually_exclusive_group()
     password.add_argument("-p", dest="password", metavar="PASSWORD", help="encrypt/decrypt with this password")
     password.add_argument("-P", dest="ask_password", action="store_true", help="prompt for the password")
 
+    parser.add_argument(
+        "--decoy",
+        metavar="FILE",
+        help="hide this file too, under --decoy-password, as a deniable decoy (lsb mode only)",
+    )
+    parser.add_argument("--decoy-password", metavar="PASSWORD", help="password for --decoy (default: prompt)")
+    parser.add_argument("--decoy-name", metavar="NAME", help="name to store for --decoy (default: its own name)")
     parser.add_argument("--sign", metavar="KEY", help="sign the hidden file with this Ed25519 private key")
     parser.add_argument("--verify", metavar="PUBKEY", help="only extract if the file is signed with this public key")
     parser.add_argument("--keygen", metavar="FILE", help="create an Ed25519 key pair in FILE and FILE.pub")
@@ -104,9 +116,44 @@ def hide(
     print(f"[+] Hidden file saved in {written}")
 
 
+def hide_deniable(
+    image: str,
+    file: str,
+    password: str,
+    decoy_file: str,
+    decoy_password: str,
+    decoy_name: str | None,
+    output: str | None,
+) -> None:
+    real_data = Path(file).read_bytes()
+    decoy_data = Path(decoy_file).read_bytes()
+    print(
+        f"[*] {file} file size: {len(real_data)} bytes (real), {decoy_file} file size: {len(decoy_data)} bytes (decoy)"
+    )
+
+    written = deniable.hide_deniable(
+        image,
+        decoy_data,
+        decoy_password,
+        real_data,
+        password,
+        output,
+        decoy_filename=Path(decoy_file).name if decoy_name is None else decoy_name,
+        real_filename=Path(file).name,
+    )
+    print(f"[+] Hidden file saved in {written}")
+    print("[*] Extract either file with the normal -e command, using the matching password")
+
+
 def extract(image: str, output: str | None, password: str | None, verify_key: str | None = None) -> None:
     found = core.inspect(image, password=password)
     if found is None:
+        if password:
+            revealed = deniable.reveal_decoy(image, password)
+            if revealed is not None:
+                _save_extracted(*revealed, output)
+                print("[*] This is a deniable image, found the decoy layer for this password")
+                return
         hint = "" if password else ", if it was hidden with a password pass -p or -P"
         raise SteganographerError(f"no hidden file found in {image}{hint}")
 
@@ -124,6 +171,10 @@ def extract(image: str, output: str | None, password: str | None, verify_key: st
     else:
         print("[*] Not signed")
 
+    _save_extracted(name, data, output)
+
+
+def _save_extracted(name: str | None, data: bytes, output: str | None) -> None:
     if output is None:
         if name is None:
             raise SteganographerError("this image doesn't store the file name, pass -h to say where to save it")
@@ -181,6 +232,14 @@ def main(argv: list[str] | None = None) -> int:
             menu()
         elif args.keygen:
             keygen(args.keygen)
+        elif args.decoy and not (args.image and args.file):
+            raise SteganographerError("--decoy needs -i and -h for the real file too")
+        elif args.decoy:
+            if args.mode not in (None, "lsb"):
+                raise SteganographerError("--decoy only works with -m lsb")
+            password = args.password or ask_password(confirm=True)
+            decoy_password = args.decoy_password or getpass("[?] Decoy password: ")
+            hide_deniable(args.image, args.file, password, args.decoy, decoy_password, args.decoy_name, args.output)
         elif args.image and (args.file or args.extract or args.info):
             password = args.password
             if args.ask_password:
@@ -190,7 +249,7 @@ def main(argv: list[str] | None = None) -> int:
             elif args.extract:
                 extract(args.image, args.file, password, args.verify)
             else:
-                hide(args.image, args.file, args.output, args.mode, password, args.sign)
+                hide(args.image, args.file, args.output, args.mode or "endian", password, args.sign)
         else:
             parser.print_usage()
             print("\nRun with --help to see all options.")

@@ -87,3 +87,115 @@ def test_extract_legacy_image_needs_a_path(capsys):
     legacy = Path(__file__).parent / "fixtures" / "legacy_lsb.png"
     assert main(["-e", "-i", str(legacy)]) == 1
     assert "pass -h" in capsys.readouterr().err
+
+
+@pytest.fixture
+def big_cover(tmp_path):
+    import random
+
+    from PIL import Image
+
+    rng = random.Random(9)
+    path = tmp_path / "big_cover.png"
+    Image.frombytes("RGB", (300, 300), bytes(rng.randrange(256) for _ in range(300 * 300 * 3))).save(path)
+    return path
+
+
+def test_deniable_hide_and_extract_both_layers(big_cover, tmp_path):
+    decoy_file = tmp_path / "vacation.txt"
+    decoy_file.write_bytes(b"holiday snaps, nothing interesting here")
+    real_file = tmp_path / "plan.txt"
+    real_file.write_bytes(b"the actual plan")
+    out = tmp_path / "out.png"
+
+    assert (
+        main(
+            [
+                "-i",
+                str(big_cover),
+                "-h",
+                str(real_file),
+                "-p",
+                "realpw",
+                "--decoy",
+                str(decoy_file),
+                "--decoy-password",
+                "decoypw",
+                "-o",
+                str(out),
+            ]
+        )
+        == 0
+    )
+
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    import os
+
+    old = os.getcwd()
+    try:
+        os.chdir(elsewhere)
+        assert main(["-e", "-i", str(out), "-p", "decoypw"]) == 0
+        assert (elsewhere / "vacation.txt").read_bytes() == decoy_file.read_bytes()
+
+        assert main(["-e", "-i", str(out), "-p", "realpw"]) == 0
+        assert (elsewhere / "plan.txt").read_bytes() == real_file.read_bytes()
+    finally:
+        os.chdir(old)
+
+
+def test_deniable_needs_lsb_mode(big_cover, tmp_path):
+    decoy_file = tmp_path / "decoy.txt"
+    decoy_file.write_bytes(b"decoy")
+    real_file = tmp_path / "real.txt"
+    real_file.write_bytes(b"real")
+
+    assert (
+        main(
+            [
+                "-i",
+                str(big_cover),
+                "-h",
+                str(real_file),
+                "-p",
+                "realpw",
+                "--decoy",
+                str(decoy_file),
+                "--decoy-password",
+                "decoypw",
+                "-m",
+                "endian",
+            ]
+        )
+        == 1
+    )
+
+
+def test_deniable_refuses_when_decoy_would_not_survive(big_cover, tmp_path, capsys):
+    decoy_file = tmp_path / "decoy.txt"
+    decoy_file.write_bytes(b"small decoy")
+    real_file = tmp_path / "real.txt"
+    real_file.write_bytes(b"r" * 40000)  # far past the safe fraction of big_cover's capacity
+    out = tmp_path / "out.png"
+
+    assert (
+        main(
+            [
+                "-i",
+                str(big_cover),
+                "-h",
+                str(real_file),
+                "-p",
+                "realpw",
+                "--decoy",
+                str(decoy_file),
+                "--decoy-password",
+                "decoypw",
+                "-o",
+                str(out),
+            ]
+        )
+        == 1
+    )
+    assert not out.exists()
+    assert "survive" in capsys.readouterr().err
