@@ -137,6 +137,39 @@ mode's changes invisible in the first place, see [`fec.py`](src/steganographer/f
 Nothing marks the image as carrying a decoy. The real layer, byte for byte, is exactly what you'd get from an
 ordinary `steganographer -i ... -h ... -p realpw` with no `--decoy` at all.
 
+## Checking how detectable your image is
+
+`--analyze` runs two classic steganalysis tests against an image and tells you how exposed it looks, instead of
+just taking the [Limitations](#limitations) section's word for it:
+
+```sh
+steganographer --analyze -i cat_steg0.png
+```
+
+```
+[*] Chi-square (whole image): 0.000
+[*] Chi-square (most suspicious window): 1.000
+[*] RS discriminant: -0.0009 (estimated 3% of capacity used)
+[!] Verdict: likely contains hidden data
+```
+
+- **Chi-square** ([Westfeld & Pfitzmann](https://doi.org/10.1007/10719724_5)) checks whether adjacent byte
+  values look suspiciously close to equally common, which is what lsb replacement does to them. It's run over
+  20 windows across the image as well as the whole thing, so a file hidden without a password (filled in from
+  the top, see [Modes](#modes)) shows up as a spike in the early windows even when the whole-image number stays
+  quiet, exactly what "most suspicious window" above is showing for a small, unscattered hide.
+- **RS analysis** ([Fridrich, Goljan & Du](https://doi.org/10.1145/1232454.1232466)) flips groups of pixels two
+  opposite ways and compares how that changes local smoothness. It doesn't need the chi-square test's kind of
+  byte-value imbalance to work, so it's the one that can also say roughly how much of the image's capacity
+  looks used, calibrated against synthetic test data (see
+  [`analyze.py`](src/steganographer/analyze.py) for exactly how, and its limits).
+
+Neither test is reliable alone, which is why there are two and why both matter to the verdict. Both are more
+exact on real photographs, which have natural sensor and compression bias these tests were designed around;
+smoother or already-noisy images can read as more suspicious than they really are. Nothing here replaces a
+dedicated steganalysis tool, it's meant to answer "would a scattered, password-protected hide actually be
+harder to find than a plain one" for this project's own output, not to catch someone else's.
+
 ## Using it from Python
 
 ```python
@@ -176,6 +209,13 @@ steganographer.hide_deniable(
 )
 steganographer.reveal_decoy("cat_steg0.png", "decoypw")  # (None, b'holiday photos')
 steganographer.reveal("cat_steg0.png", password="realpw")  # b'the real plan'
+
+# steganalysis
+from steganographer import analyze
+
+report = analyze.analyze("cat_steg0.png")
+report.chi_square, report.peak_chi_square, report.estimated_fraction, report.verdict
+# (0.0, 1.0, 0.03, 'likely contains hidden data')
 ```
 
 `inspect` returns `None` if the image has nothing hidden in it. For lsb mode with a password, pass `password=` to
@@ -241,7 +281,9 @@ is a good idea to hide those files again with the current version.
 ### Limitations
 
 - Changing the lowest bits adds a bit of noise. Anyone who has the original image, or runs steganalysis tools,
-  can tell the image was modified. Never share the original image.
+  can tell the image was modified (`--analyze` runs two of the classic ones, see
+  [Checking how detectable your image is](#checking-how-detectable-your-image-is)). Never share the original
+  image.
 - Spreading the data out with a password helps most for small files. The more of the image's capacity you use,
   the more its statistics change, wherever the bits go. Use an image much bigger than the file.
 - Anything that recompresses or resizes the image destroys data hidden with `lsb` mode. Most chat apps and

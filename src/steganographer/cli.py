@@ -3,7 +3,7 @@ import sys
 from getpass import getpass
 from pathlib import Path
 
-from . import __version__, core, deniable, signing
+from . import __version__, analyze, core, deniable, signing
 from .errors import SteganographerError
 
 USAGE = """\
@@ -11,6 +11,7 @@ steganographer -i IMAGE -h FILE [-o OUTPUT] [-m {lsb,endian}] [-p PASSWORD | -P]
        steganographer -i IMAGE -h FILE -p PASSWORD --decoy FILE [--decoy-password PASSWORD]
        steganographer -e -i IMAGE [-h OUTPUT] [-p PASSWORD | -P] [--verify PUBKEY]
        steganographer --info -i IMAGE [-p PASSWORD | -P]
+       steganographer --analyze -i IMAGE
        steganographer --keygen FILE
        steganographer --menu"""
 
@@ -30,6 +31,8 @@ examples:
   steganographer -i cat.png -h plan.txt -p realpw --decoy vacation.txt --decoy-password decoypw
   steganographer -e -i cat_steg0.png -p decoypw    # gets vacation.txt back
   steganographer -e -i cat_steg0.png -p realpw     # gets plan.txt back
+
+  steganographer --analyze -i cat_steg0.png
 """
 
 
@@ -70,6 +73,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--verify", metavar="PUBKEY", help="only extract if the file is signed with this public key")
     parser.add_argument("--keygen", metavar="FILE", help="create an Ed25519 key pair in FILE and FILE.pub")
     parser.add_argument("--info", action="store_true", help="show capacity and whether IMAGE has a hidden file")
+    parser.add_argument(
+        "--analyze", action="store_true", help="check how detectable IMAGE's lsb data is (see the README)"
+    )
     parser.add_argument("--menu", action="store_true", help="interactive menu")
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     parser.add_argument("--help", action="help", help="show this help and exit")
@@ -196,6 +202,18 @@ def info(image: str, password: str | None) -> None:
         print(f"[+] Hidden file found: {found.mode} mode, {found.size} bytes, {encrypted}")
 
 
+def show_analysis(image: str) -> None:
+    report = analyze.analyze(image)
+    print(f"[*] Chi-square (whole image): {report.chi_square:.3f}")
+    print(f"[*] Chi-square (most suspicious window): {report.peak_chi_square:.3f}")
+    print(
+        f"[*] RS discriminant: {report.rs.discriminant:+.4f}"
+        f" (estimated {report.estimated_fraction:.0%} of capacity used)"
+    )
+    print(f"[{'!' if report.verdict != 'no strong signal of hidden data' else '*'}] Verdict: {report.verdict}")
+    print("[*] This is a rough check, not a substitute for a dedicated steganalysis tool, see the README.")
+
+
 def menu() -> None:
     print("[*] Steganographer - Hide files in images")
     print("[#] Menu:")
@@ -232,6 +250,10 @@ def main(argv: list[str] | None = None) -> int:
             menu()
         elif args.keygen:
             keygen(args.keygen)
+        elif args.analyze:
+            if not args.image:
+                raise SteganographerError("--analyze needs -i")
+            show_analysis(args.image)
         elif args.decoy and not (args.image and args.file):
             raise SteganographerError("--decoy needs -i and -h for the real file too")
         elif args.decoy:

@@ -21,6 +21,10 @@
 
 ### Added
 
+- `--analyze` runs a chi-square attack and RS analysis against an image and reports how likely it is to have
+  something hidden in it, roughly how much, and (via a windowed chi-square profile) whether it's concentrated
+  in one part of the image the way an unscattered hide would be. New `analyze` module, `analyze.analyze` in the
+  Python API. See the README for what each test actually needs from a cover image to be meaningful.
 - `--decoy FILE --decoy-password PASSWORD` hides a second, decoy file in the same lsb image, so you have
   something to hand over if you're ever pressured to reveal what's hidden while the real file stays invisible.
   Works the same way a VeraCrypt hidden volume does, see the README for how and its limits. New `fec` and
