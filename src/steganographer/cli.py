@@ -33,6 +33,8 @@ examples:
   steganographer -e -i cat_steg0.png -p realpw     # gets plan.txt back
 
   steganographer --analyze -i cat_steg0.png
+
+  steganographer -i cat.png -h notes.txt -m lsb -P --adaptive
 """
 
 
@@ -57,6 +59,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("-o", dest="output", metavar="OUTPUT", help="output image (default: <image>_steg0.png)")
     parser.add_argument("-e", dest="extract", action="store_true", help="extract a hidden file instead of hiding one")
     parser.add_argument("-m", dest="mode", choices=["lsb", "endian"], default=None, help="default: endian")
+    parser.add_argument(
+        "--adaptive",
+        action="store_true",
+        help="fill the visually busiest parts of the image first (lsb mode with a password only)",
+    )
 
     password = parser.add_mutually_exclusive_group()
     password.add_argument("-p", dest="password", metavar="PASSWORD", help="encrypt/decrypt with this password")
@@ -108,7 +115,13 @@ def keygen(path: str) -> None:
 
 
 def hide(
-    image: str, file: str, output: str | None, mode: str, password: str | None, sign_key: str | None = None
+    image: str,
+    file: str,
+    output: str | None,
+    mode: str,
+    password: str | None,
+    sign_key: str | None = None,
+    adaptive: bool = False,
 ) -> None:
     data = Path(file).read_bytes()
     print(f"[*] {file} file size: {len(data)} bytes")
@@ -116,9 +129,13 @@ def hide(
         print("[!] Warning: endian mode is easy to detect, consider using a password")
 
     key = load_signing_key(sign_key) if sign_key else None
-    written = core.hide(image, data, output, password=password, mode=mode, filename=Path(file).name, sign_with=key)
+    written = core.hide(
+        image, data, output, password=password, mode=mode, filename=Path(file).name, sign_with=key, adaptive=adaptive
+    )
     if key:
         print(f"[*] Signed with {signing.fingerprint(key.public_key())}")
+    if adaptive:
+        print("[*] Filled the busiest-looking parts of the image first")
     print(f"[+] Hidden file saved in {written}")
 
 
@@ -271,7 +288,7 @@ def main(argv: list[str] | None = None) -> int:
             elif args.extract:
                 extract(args.image, args.file, password, args.verify)
             else:
-                hide(args.image, args.file, args.output, args.mode or "endian", password, args.sign)
+                hide(args.image, args.file, args.output, args.mode or "endian", password, args.sign, args.adaptive)
         else:
             parser.print_usage()
             print("\nRun with --help to see all options.")

@@ -21,6 +21,13 @@
 
 ### Added
 
+- `--adaptive` (lsb mode with a password) fills the visually busiest parts of the image first instead of
+  scattering uniformly, so a file that fits in the busy regions alone never touches the flat, low-noise parts
+  where a change would stand out the most. Verified with `--analyze`: on a half flat, half textured test image,
+  a small adaptive hide left the flat half's RS statistics completely unchanged, where a uniform scattered hide
+  of the same size shifted them by 0.40. New `adaptive` module, `hide(..., adaptive=True)` in the Python API.
+  Anyone can recompute which regions are busy from the stego image alone, without the password -- see the
+  README for what that trade-off actually means.
 - `--analyze` runs a chi-square attack and RS analysis against an image and reports how likely it is to have
   something hidden in it, roughly how much, and (via a windowed chi-square profile) whether it's concentrated
   in one part of the image the way an unscattered hide would be. New `analyze` module, `analyze.analyze` in the

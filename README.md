@@ -170,6 +170,33 @@ smoother or already-noisy images can read as more suspicious than they really ar
 dedicated steganalysis tool, it's meant to answer "would a scattered, password-protected hide actually be
 harder to find than a plain one" for this project's own output, not to catch someone else's.
 
+## Adaptive placement
+
+`--adaptive` fills the visually busiest parts of the image first (fine texture, foliage, noisy areas) instead
+of spreading the data perfectly uniformly, so a file that only needs part of the capacity never touches the
+smooth, flat parts of the image where a couple of flipped low bits would be the most out of place:
+
+```sh
+steganographer -i cat.png -h notes.txt -m lsb -P --adaptive
+```
+
+On a test image that's half flat and half textured, hiding the same small file with `--adaptive` left the flat
+half's `analyze.py` RS statistics completely unchanged, while a normal scattered hide of the same size shifted
+them by 0.40 (see `test_adaptive_disturbs_the_flat_half_far_less_than_uniform_scattering` in
+[`tests/test_adaptive.py`](tests/test_adaptive.py), which checks this is still true, not just once measured by
+hand). A file too big to fit in the busy regions alone spills into the flat ones the same way capacity has
+always worked, it doesn't refuse or fail differently.
+
+Extraction is the normal `-e` with the same password, nothing extra to pass. Needs `-m lsb` and a password.
+
+This isn't free: the complexity of a pixel only depends on bits the image already shows, not on the password,
+so anyone can recompute the same busy/flat map from the stego image alone and narrow down *where* data is
+likely to be, even without the password -- a real, known trade-off of adaptive steganography in general, not a
+bug specific to this implementation. It doesn't reveal whether anything is hidden at all or let anyone read it,
+and a busy region is still a large area to search, but it's a weaker guarantee than plain scattering's "no
+information without the password" at all. See [`adaptive.py`](src/steganographer/adaptive.py) for the details
+and how the busy/flat map is computed so it survives being written to reliably.
+
 ## Using it from Python
 
 ```python
@@ -216,6 +243,9 @@ from steganographer import analyze
 report = analyze.analyze("cat_steg0.png")
 report.chi_square, report.peak_chi_square, report.estimated_fraction, report.verdict
 # (0.0, 1.0, 0.03, 'likely contains hidden data')
+
+# adaptive placement
+steganographer.hide("cat.png", b"meet at noon", "cat_steg0.png", mode="lsb", password="hunter2", adaptive=True)
 ```
 
 `inspect` returns `None` if the image has nothing hidden in it. For lsb mode with a password, pass `password=` to
@@ -285,7 +315,10 @@ is a good idea to hide those files again with the current version.
   [Checking how detectable your image is](#checking-how-detectable-your-image-is)). Never share the original
   image.
 - Spreading the data out with a password helps most for small files. The more of the image's capacity you use,
-  the more its statistics change, wherever the bits go. Use an image much bigger than the file.
+  the more its statistics change, wherever the bits go. Use an image much bigger than the file. `--adaptive`
+  (see [Adaptive placement](#adaptive-placement)) concentrates that change where it's least visible instead of
+  spreading it uniformly, but the same rule applies once you use enough of the image's capacity that it has to
+  spread into flatter areas too.
 - Anything that recompresses or resizes the image destroys data hidden with `lsb` mode. Most chat apps and
   social networks do this to uploaded images, so send the image as a file/document instead.
 

@@ -49,6 +49,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey,
 from PIL import Image
 
 from . import crypto, scatter, signing
+from .adaptive import AdaptiveOrder
 from .errors import CapacityError, NoHiddenDataError, SignatureError, SteganographerError
 
 type PathLike = str | Path
@@ -70,6 +71,8 @@ class Format:
     encrypted: bool
     # made by v3 or older: no file name, and md5 as the encryption key
     legacy: bool = False
+    # busiest-region-first order instead of a uniform scatter, see adaptive.py
+    adaptive: bool = False
 
     @property
     def scattered(self) -> bool:
@@ -79,6 +82,7 @@ class Format:
 FORMATS = [
     Format(0xDEADBEEF, "lsb", encrypted=False),
     Format(0x1337BEEF, "lsb", encrypted=True),
+    Format(0xADA97EED, "lsb", encrypted=True, adaptive=True),
     Format(0x5AFEBEEF, "endian", encrypted=False),
     Format(0xBABEBEEF, "endian", encrypted=True),
     Format(0xDEADC0DE, "lsb", encrypted=False, legacy=True),
@@ -89,9 +93,9 @@ FORMATS = [
 _BY_MAGIC = {f.magic: f for f in FORMATS}
 
 
-def _format_for(mode: str, encrypted: bool) -> Format:
+def _format_for(mode: str, encrypted: bool, adaptive: bool = False) -> Format:
     for f in FORMATS:
-        if f.mode == mode and f.encrypted == encrypted and not f.legacy:
+        if f.mode == mode and f.encrypted == encrypted and f.adaptive == adaptive and not f.legacy:
             return f
     raise ValueError(f"unknown hiding mode: {mode!r}")
 
@@ -242,6 +246,7 @@ def hide(
     mode: str = "endian",
     filename: str | None = None,
     sign_with: Ed25519PrivateKey | None = None,
+    adaptive: bool = False,
 ) -> Path:
     """
     Hide ``data`` inside the image at ``image_path`` and write the result to
@@ -252,8 +257,14 @@ def hide(
 
     ``sign_with`` signs the name and contents with an Ed25519 key (see
     ``signing.load_private_key``).
+
+    ``adaptive`` (lsb mode with a password only) fills the visually busiest
+    parts of the image first instead of scattering uniformly, see
+    ``adaptive.py`` and its trade-offs.
     """
-    fmt = _format_for(mode, encrypted=bool(password))
+    if adaptive and (mode != "lsb" or not password):
+        raise ValueError("adaptive placement needs lsb mode and a password")
+    fmt = _format_for(mode, encrypted=bool(password), adaptive=adaptive)
     output_path = Path(output_path) if output_path else default_output_path(image_path, mode)
 
     data = _pack(safe_name(filename) if filename else None, data, sign_with)
@@ -280,7 +291,13 @@ def hide(
 
         pixels = np.array(image)
         channels = _color_channels(pixels)
-        _write_crumbs(channels, crumbs, _order(password, channels) if fmt.scattered else None)
+        if fmt.adaptive:
+            order = AdaptiveOrder(password, pixels)
+        elif fmt.scattered:
+            order = _order(password, channels)
+        else:
+            order = None
+        _write_crumbs(channels, crumbs, order)
         pixels[..., :3] = channels.reshape(pixels.shape[:2] + (3,))
         Image.fromarray(pixels).save(output_path)
     else:
@@ -326,11 +343,14 @@ def _read(image_path: PathLike, password: str | None) -> tuple:
         except OSError:
             image = None
         if image is not None:
-            channels = _color_channels(np.asarray(image))
+            pixels = np.asarray(image)
+            channels = _color_channels(pixels)
             room = _lsb_room(*image.size)
             found = _read_lsb(channels, room, None)
             if found is None and password:
                 found = _read_lsb(channels, room, _order(password, channels))
+            if found is None and password:
+                found = _read_lsb(channels, room, AdaptiveOrder(password, pixels))
 
     if found is None:
         raise NoHiddenDataError(f"no hidden file found in {image_path}")
