@@ -10,3 +10,4 @@ venv/
 .coverage
 htmlcov/
 *_steg0.*
+web/dist/

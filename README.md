@@ -10,6 +10,10 @@ Hide any file inside an image, optionally encrypted with a password, and get it 
 
 Can you spot the difference? The image on the right has a text file with 100,000 words hidden in its pixels.
 
+**[Try it in your browser](https://priyansh-anand.github.io/steganographer/)** &mdash; the real package,
+including signing, deniable hiding, adaptive placement and `--analyze`, runs entirely client-side via
+[Pyodide](https://pyodide.org). Nothing you pick ever leaves the tab, see [`web/`](web/).
+
 ## Install
 
 Needs Python 3.12 or newer.

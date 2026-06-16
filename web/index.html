@@ -1,0 +1,506 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Steganographer</title>
+<meta name="description" content="Hide a file inside an image, entirely in your browser. Nothing is uploaded anywhere." />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg: #f7f4ec;
+    --surface: #ffffff;
+    --surface-2: #f0ebdd;
+    --border: #e0d9c7;
+    --text: #1e1b14;
+    --text-dim: #6b6354;
+    --accent: #b8791f;
+    --accent-ink: #ffffff;
+    --accent-2: #2e8b84;
+    --danger: #c23f2e;
+    --danger-bg: #fbe9e6;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #15140f;
+      --surface: #1e1c16;
+      --surface-2: #262319;
+      --border: #34302a;
+      --text: #ede8dd;
+      --text-dim: #9c9280;
+      --accent: #e8a33d;
+      --accent-ink: #15140f;
+      --accent-2: #6fc7c0;
+      --danger: #e2604f;
+      --danger-bg: #3a1f1a;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #15140f;
+    --surface: #1e1c16;
+    --surface-2: #262319;
+    --border: #34302a;
+    --text: #ede8dd;
+    --text-dim: #9c9280;
+    --accent: #e8a33d;
+    --accent-ink: #15140f;
+    --accent-2: #6fc7c0;
+    --danger: #e2604f;
+    --danger-bg: #3a1f1a;
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: "IBM Plex Sans", system-ui, sans-serif;
+    font-size: 15px;
+    line-height: 1.5;
+    padding: 32px 16px 64px;
+  }
+  .wrap { max-width: 640px; margin: 0 auto; }
+
+  header { margin-bottom: 28px; }
+  h1 {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-weight: 600;
+    font-size: 1.5rem;
+    letter-spacing: -0.01em;
+    margin: 0 0 6px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  h1 .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); flex-shrink: 0; }
+  header p { color: var(--text-dim); margin: 0; max-width: 46ch; }
+
+  .status {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.8rem;
+    color: var(--text-dim);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 14px;
+    margin: 20px 0;
+  }
+  .status .spinner {
+    width: 12px; height: 12px; border-radius: 50%;
+    border: 2px solid var(--border); border-top-color: var(--accent);
+    animation: spin 0.8s linear infinite; flex-shrink: 0;
+  }
+  .status.ready .spinner { display: none; }
+  .status.ready::before { content: "●"; color: var(--accent-2); font-size: 0.6rem; }
+  .status.error { color: var(--danger); border-color: var(--danger); }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 20px; }
+  .tab {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.85rem;
+    font-weight: 500;
+    background: none; border: none; cursor: pointer;
+    color: var(--text-dim);
+    padding: 10px 4px;
+    margin-bottom: -1px;
+    border-bottom: 2px solid transparent;
+  }
+  .tab[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); }
+  .tab:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .panel[hidden] { display: none !important; }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+  }
+  .card + .card { margin-top: 16px; }
+
+  .field { margin-bottom: 16px; }
+  .field:last-child { margin-bottom: 0; }
+  label {
+    display: block;
+    font-size: 0.78rem;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-dim);
+    margin-bottom: 6px;
+  }
+
+  .drop {
+    border: 1.5px dashed var(--border);
+    border-radius: 10px;
+    padding: 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    cursor: pointer;
+    background: var(--surface-2);
+    transition: border-color 0.15s ease;
+  }
+  .drop:hover, .drop.drag { border-color: var(--accent); }
+  .drop img { width: 44px; height: 44px; border-radius: 6px; object-fit: cover; flex-shrink: 0; border: 1px solid var(--border); }
+  .drop .icon {
+    width: 44px; height: 44px; border-radius: 6px; flex-shrink: 0;
+    background: var(--surface); border: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: center;
+    font-family: "IBM Plex Mono", monospace; color: var(--text-dim); font-size: 1.1rem;
+  }
+  .drop .meta { min-width: 0; }
+  .drop .meta .name { font-size: 0.9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .drop .meta .sub { font-size: 0.78rem; color: var(--text-dim); }
+  .drop input[type="file"] { display: none; }
+
+  input[type="password"], input[type="text"] {
+    width: 100%;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    color: var(--text);
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.9rem;
+  }
+  input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+  .radiorow { display: flex; gap: 8px; }
+  .radiorow label.opt {
+    flex: 1;
+    display: flex; flex-direction: column; gap: 2px;
+    text-transform: none; letter-spacing: normal;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    color: var(--text);
+  }
+  .radiorow label.opt input { margin-right: 6px; }
+  .radiorow label.opt small { color: var(--text-dim); font-weight: 400; display: block; }
+  .radiorow input:checked + span,
+  .radiorow label.opt:has(input:checked) { border-color: var(--accent); }
+
+  .capacity { font-size: 0.78rem; color: var(--text-dim); margin-top: 8px; font-family: "IBM Plex Mono", monospace; }
+  .capacity.over { color: var(--danger); }
+
+  button.primary {
+    width: 100%;
+    background: var(--accent);
+    color: var(--accent-ink);
+    border: none;
+    border-radius: 8px;
+    padding: 12px;
+    font-family: "IBM Plex Mono", monospace;
+    font-weight: 600;
+    font-size: 0.9rem;
+    cursor: pointer;
+    margin-top: 18px;
+  }
+  button.primary:disabled { opacity: 0.5; cursor: not-allowed; }
+  button.primary:not(:disabled):hover { filter: brightness(1.05); }
+
+  .result { margin-top: 16px; }
+  .result img { width: 100%; border-radius: 8px; border: 1px solid var(--border); display: block; }
+  .result .row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 10px; }
+  .result .row .info { font-size: 0.85rem; color: var(--text-dim); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  a.download {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--accent-2);
+    text-decoration: none;
+    border: 1px solid var(--accent-2);
+    border-radius: 6px;
+    padding: 6px 12px;
+    white-space: nowrap;
+  }
+
+  .msg { font-size: 0.85rem; padding: 10px 12px; border-radius: 8px; margin-top: 14px; }
+  .msg.error { background: var(--danger-bg); color: var(--danger); }
+  .msg.ok { background: var(--surface-2); color: var(--text); border: 1px solid var(--accent-2); }
+
+  details.advanced { margin-top: 16px; border-top: 1px solid var(--border); padding-top: 14px; }
+  details.advanced summary {
+    cursor: pointer;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: var(--text-dim);
+    list-style: none;
+  }
+  details.advanced summary::-webkit-details-marker { display: none; }
+  details.advanced summary::before { content: "+ "; color: var(--accent); }
+  details.advanced[open] summary::before { content: "\2212 "; }
+  details.advanced > .field:first-of-type { margin-top: 14px; }
+
+  .toggle-row { display: flex; align-items: center; gap: 8px; cursor: pointer; margin-bottom: 4px; }
+  .toggle-row input { width: 15px; height: 15px; accent-color: var(--accent); flex-shrink: 0; }
+  .toggle-row span { font-size: 0.85rem; color: var(--text); text-transform: none; letter-spacing: normal; }
+  .subsection { margin-top: 10px; padding-left: 23px; display: flex; flex-direction: column; gap: 12px; }
+  .subsection[hidden] { display: none; }
+  .subsection .hint { font-size: 0.76rem; color: var(--text-dim); margin-top: -6px; }
+
+  .stats { display: flex; flex-direction: column; gap: 8px; font-family: "IBM Plex Mono", monospace; font-size: 0.85rem; }
+  .stats .stat { display: flex; justify-content: space-between; gap: 12px; }
+  .stats .stat .k { color: var(--text-dim); }
+  .stats .stat .v { font-weight: 500; }
+
+  .badge {
+    display: inline-block;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.78rem;
+    font-weight: 600;
+    padding: 5px 10px;
+    border-radius: 6px;
+    margin-top: 14px;
+  }
+  .badge.clean { background: var(--surface-2); color: var(--accent-2); border: 1px solid var(--accent-2); }
+  .badge.suspicious { background: var(--danger-bg); color: var(--danger); border: 1px solid var(--danger); opacity: 0.85; }
+  .badge.flagged { background: var(--danger-bg); color: var(--danger); border: 1px solid var(--danger); }
+
+  .fingerprint {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.78rem;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 10px;
+    word-break: break-all;
+    color: var(--text-dim);
+  }
+
+  footer {
+    margin-top: 32px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border);
+    font-size: 0.8rem;
+    color: var(--text-dim);
+  }
+  footer p { margin: 0 0 8px; }
+  footer a { color: var(--accent-2); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1><span class="dot"></span>Steganographer</h1>
+    <p>Hide a file inside an image's pixels, or pull one back out. Runs entirely in this tab &mdash; nothing you pick is uploaded anywhere.</p>
+  </header>
+
+  <div id="status" class="status">
+    <div class="spinner"></div>
+    <span id="statusText">Starting Python runtime&hellip;</span>
+  </div>
+
+  <nav class="tabs" role="tablist">
+    <button class="tab" id="tabHide" role="tab" aria-selected="true" disabled>Hide</button>
+    <button class="tab" id="tabReveal" role="tab" aria-selected="false" disabled>Reveal</button>
+    <button class="tab" id="tabAnalyze" role="tab" aria-selected="false" disabled>Analyze</button>
+    <button class="tab" id="tabKeys" role="tab" aria-selected="false" disabled>Keys</button>
+  </nav>
+
+  <section id="panelHide" class="panel">
+    <div class="card">
+      <div class="field">
+        <label for="coverInput">Cover image</label>
+        <div class="drop" id="coverDrop">
+          <div class="icon">img</div>
+          <div class="meta">
+            <div class="name" id="coverName">Click or drop a PNG, BMP or TIFF</div>
+            <div class="sub" id="coverSub">Used as-is &mdash; needs to be lossless for lsb mode</div>
+          </div>
+          <input type="file" id="coverInput" accept="image/*" />
+        </div>
+        <div class="capacity" id="capacityLine" hidden></div>
+      </div>
+
+      <div class="field">
+        <label for="fileInput">File to hide</label>
+        <div class="drop" id="fileDrop">
+          <div class="icon">+</div>
+          <div class="meta">
+            <div class="name" id="fileName">Click or drop any file</div>
+            <div class="sub" id="fileSub">Its name is stored too, so extracting needs no extra input</div>
+          </div>
+          <input type="file" id="fileInput" />
+        </div>
+      </div>
+
+      <div class="field">
+        <label>Mode</label>
+        <div class="radiorow">
+          <label class="opt"><input type="radio" name="mode" value="lsb" checked /><span>lsb</span><small>Hidden in the pixels, invisible to the eye</small></label>
+          <label class="opt"><input type="radio" name="mode" value="endian" /><span>endian</span><small>Appended after the image, any format</small></label>
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="hidePassword">Password (optional)</label>
+        <input type="password" id="hidePassword" placeholder="Leave blank to skip encryption" autocomplete="new-password" />
+      </div>
+
+      <details class="advanced">
+        <summary>Advanced: signing, a decoy, adaptive placement</summary>
+
+        <div class="field">
+          <label class="toggle-row" for="adaptiveCheck">
+            <input type="checkbox" id="adaptiveCheck" />
+            <span>Fill the busiest-looking parts of the image first</span>
+          </label>
+          <div class="hint">lsb mode with a password only &mdash; see "Adaptive placement" in the README</div>
+        </div>
+
+        <div class="field">
+          <label class="toggle-row" for="signCheck">
+            <input type="checkbox" id="signCheck" />
+            <span>Sign with an Ed25519 key</span>
+          </label>
+          <div class="subsection" id="signFields" hidden>
+            <div class="drop" id="signKeyDrop">
+              <div class="icon">key</div>
+              <div class="meta">
+                <div class="name" id="signKeyName">Click or drop a private key</div>
+                <div class="sub">OpenSSH or PEM format, e.g. ~/.ssh/id_ed25519 or one made in the Keys tab</div>
+              </div>
+              <input type="file" id="signKeyInput" />
+            </div>
+            <input type="password" id="signPassphrase" placeholder="Key passphrase (if it has one)" autocomplete="off" />
+          </div>
+        </div>
+
+        <div class="field">
+          <label class="toggle-row" for="decoyCheck">
+            <input type="checkbox" id="decoyCheck" />
+            <span>Add a decoy (deniable hiding)</span>
+          </label>
+          <div class="subsection" id="decoyFields" hidden>
+            <div class="drop" id="decoyDrop">
+              <div class="icon">+</div>
+              <div class="meta">
+                <div class="name" id="decoyName">Click or drop the decoy file</div>
+                <div class="sub" id="decoySub">Shown if this password is entered instead of the real one</div>
+              </div>
+              <input type="file" id="decoyInput" />
+            </div>
+            <input type="password" id="decoyPassword" placeholder="Decoy password (must differ from the real one)" autocomplete="new-password" />
+            <div class="hint">Forces lsb mode. Keep the real file well under the image's capacity, see "Deniable hiding" in the README.</div>
+          </div>
+        </div>
+      </details>
+
+      <button class="primary" id="hideBtn" disabled>Hide file</button>
+      <div id="hideMsg"></div>
+      <div id="hideResult" class="result" hidden></div>
+    </div>
+  </section>
+
+  <section id="panelReveal" class="panel" hidden>
+    <div class="card">
+      <div class="field">
+        <label for="stegoInput">Image with a hidden file</label>
+        <div class="drop" id="stegoDrop">
+          <div class="icon">img</div>
+          <div class="meta">
+            <div class="name" id="stegoName">Click or drop an image</div>
+            <div class="sub">Works with images made by this page, or the steganographer CLI</div>
+          </div>
+          <input type="file" id="stegoInput" accept="image/*" />
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="revealPassword">Password (if it was hidden with one)</label>
+        <input type="password" id="revealPassword" autocomplete="off" />
+        <div class="hint">Wrong on purpose? If this image has a decoy, the decoy's own password finds that instead.</div>
+      </div>
+
+      <details class="advanced">
+        <summary>Advanced: require a signature</summary>
+        <div class="field">
+          <label class="toggle-row" for="verifyCheck">
+            <input type="checkbox" id="verifyCheck" />
+            <span>Only accept it if signed by a specific key</span>
+          </label>
+          <div class="subsection" id="verifyFields" hidden>
+            <div class="drop" id="verifyKeyDrop">
+              <div class="icon">key</div>
+              <div class="meta">
+                <div class="name" id="verifyKeyName">Click or drop a public key</div>
+                <div class="sub">A .pub file, or one fetched from github.com/&lt;user&gt;.keys</div>
+              </div>
+              <input type="file" id="verifyKeyInput" />
+            </div>
+          </div>
+        </div>
+      </details>
+
+      <button class="primary" id="revealBtn" disabled>Extract file</button>
+      <div id="revealMsg"></div>
+      <div id="revealResult" class="result" hidden></div>
+    </div>
+  </section>
+
+  <section id="panelAnalyze" class="panel" hidden>
+    <div class="card">
+      <div class="field">
+        <label for="analyzeInput">Image to check</label>
+        <div class="drop" id="analyzeDrop">
+          <div class="icon">img</div>
+          <div class="meta">
+            <div class="name" id="analyzeName">Click or drop an image</div>
+            <div class="sub">Runs a chi-square attack and RS analysis, see "Checking how detectable your image is"</div>
+          </div>
+          <input type="file" id="analyzeInput" accept="image/*" />
+        </div>
+      </div>
+
+      <button class="primary" id="analyzeBtn" disabled>Analyze</button>
+      <div id="analyzeMsg"></div>
+      <div id="analyzeResult" class="result" hidden></div>
+    </div>
+  </section>
+
+  <section id="panelKeys" class="panel" hidden>
+    <div class="card">
+      <p style="margin: 0 0 16px; font-size: 0.85rem; color: var(--text-dim);">
+        Makes an Ed25519 key pair, the same way <code>ssh-keygen -t ed25519</code> does. Use the private key to
+        sign a hidden file in the Hide tab; share the public key so someone can require your signature when
+        extracting.
+      </p>
+      <div class="field">
+        <label for="keygenPassphrase">Passphrase (optional)</label>
+        <input type="password" id="keygenPassphrase" placeholder="Leave blank for an unencrypted key" autocomplete="new-password" />
+      </div>
+      <button class="primary" id="keygenBtn" disabled>Generate key pair</button>
+      <div id="keygenMsg"></div>
+      <div id="keygenResult" class="result" hidden></div>
+    </div>
+  </section>
+
+  <footer>
+    <p>Runs the real <code>steganographer</code> package, not a rewrite &mdash; see the <a href="https://github.com/priyansh-anand/steganographer">README</a> for the full CLI and Python API.</p>
+    <p>First load downloads a Python runtime (~10&ndash;15MB), cached by your browser after that. Open devtools &rarr; Network to confirm nothing else leaves this tab.</p>
+  </footer>
+</div>
+
+<!-- SRI covers this one file; Pyodide's own runtime then fetches its WASM binary,
+     stdlib and packages dynamically, which a script tag's integrity can't pin --
+     those are served from the same versioned, immutable jsdelivr path. -->
+<script
+  src="https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js"
+  integrity="sha384-i3R37b3tF+HWudsUf1VSEOY2YxwSNMqY8DQa9Z0O3xh+NkJ9o+yjcGyIi5huj+nB"
+  crossorigin="anonymous"
+></script>
+<script src="app.js"></script>
+</body>
+</html>
