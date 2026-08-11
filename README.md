@@ -82,6 +82,9 @@ has something hidden in it, `--info` and `-e` only find it when given the passwo
 the image, so it still opens normally. It works with any format and any file size, but anyone who opens the
 image in a hex editor will see it, so always use a password with this mode.
 
+**`robust`** survives the image being re-saved as JPEG, unlike the other two. Small capacity, its own section
+below.
+
 ## Signing
 
 A password keeps the file secret, but it doesn't tell the person extracting it who hid it, or whether someone
@@ -201,6 +204,29 @@ and a busy region is still a large area to search, but it's a weaker guarantee t
 information without the password" at all. See [`adaptive.py`](src/steganographer/adaptive.py) for the details
 and how the busy/flat map is computed so it survives being written to reliably.
 
+## Surviving JPEG recompression
+
+`lsb` and `endian` both die the moment an image is re-saved as JPEG, which is what every chat app and social
+network does to whatever you send it. `-m robust` survives that:
+
+```sh
+steganographer -i photo.jpg -h note.txt -m robust
+steganographer -e -i photo_steg0.png          # even after it's been re-compressed and shared around
+```
+
+Instead of touching the pixels' low bits (the first thing JPEG throws away), it nudges one mid-frequency DCT
+coefficient of each 8×8 luma block onto an even or odd multiple of a step — the same value JPEG's own quantiser
+rounds to and keeps. Measured through five rounds of JPEG recompression at quality 40–90 with 4:2:0 chroma
+subsampling, it comes back at under 1% bit error, invisibly (PSNR ~41 dB), and [`fec`](src/steganographer/fec.py)'s
+Reed-Solomon mops up that last bit. See [`robust.py`](src/steganographer/robust.py) and
+[`tests/test_robust.py`](tests/test_robust.py), which check it against real recompression rather than asserting it.
+
+The trade-off is **capacity**: one bit per 8×8 block, so roughly 70 bytes for a 256×256 image, ~400 for
+512×512, a few KB for a large photo (a password's encryption overhead eats ~90 bytes of that). This is a mode
+for a short message, a URL, a key fingerprint or a signature — not a general file. It also **only survives
+re-compression, not resizing, cropping or rotation**, which shift the 8×8 grid it's aligned to. `hide`/`reveal`
+via `-e` and the Python API work the same as any other mode.
+
 ## Using it from Python
 
 ```python
@@ -250,6 +276,11 @@ report.chi_square, report.peak_chi_square, report.estimated_fraction, report.ver
 
 # adaptive placement
 steganographer.hide("cat.png", b"meet at noon", "cat_steg0.png", mode="lsb", password="hunter2", adaptive=True)
+
+# robust mode (survives JPEG recompression)
+steganographer.hide_robust("photo.jpg", b"a durable note", "photo_steg0.png", filename="note.txt")
+steganographer.reveal_robust("photo_steg0.png")  # Revealed(name='note.txt', data=b'a durable note', ...)
+steganographer.robust_capacity(512, 512)  # ~400 bytes
 ```
 
 `inspect` returns `None` if the image has nothing hidden in it. For lsb mode with a password, pass `password=` to
@@ -324,7 +355,9 @@ is a good idea to hide those files again with the current version.
   spreading it uniformly, but the same rule applies once you use enough of the image's capacity that it has to
   spread into flatter areas too.
 - Anything that recompresses or resizes the image destroys data hidden with `lsb` mode. Most chat apps and
-  social networks do this to uploaded images, so send the image as a file/document instead.
+  social networks do this to uploaded images, so either send the image as a file/document, or use
+  [`-m robust`](#surviving-jpeg-recompression), which is built to survive recompression (at a big cost in
+  capacity, and still not resizing/cropping).
 
 ## Development
 

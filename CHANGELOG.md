@@ -21,6 +21,12 @@
 
 ### Added
 
+- `-m robust` hides a short message that survives the image being re-saved as JPEG, which destroys `lsb` and
+  `endian` data (chat apps and social networks recompress everything). It modulates a mid-frequency DCT
+  coefficient of each 8x8 luma block (QIM) rather than the pixels' low bits, and Reed-Solomon mops up the
+  residual error. Low capacity (about one bit per 8x8 block) and same-dimensions only (not resize/crop). New
+  `robust` module, `-m robust`, and `hide_robust`/`reveal_robust`/`robust_capacity` in the Python API. Measured
+  against real repeated recompression in `tests/test_robust.py`.
 - A browser demo at [priyansh-anand.github.io/steganographer](https://priyansh-anand.github.io/steganographer/),
   running the real package client-side via Pyodide, no server involved: hide/reveal, signing, deniable hiding,
   adaptive placement and `--analyze`, plus a Keys tab to generate an Ed25519 pair without the private key ever

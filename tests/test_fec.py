@@ -21,11 +21,11 @@ def test_survives_corruption_within_the_bound():
     data = bytes(random.Random(1).randrange(256) for _ in range(1000))
     encoded = bytearray(fec.encode(data))
 
-    # corrupt up to PARITY_SIZE//2 bytes in every block, spread across the whole thing
+    # corrupt up to DENIABLE_PARITY//2 bytes in every block, spread across the whole thing
     rng = random.Random(2)
     for block_start in range(0, len(encoded), fec.BLOCK_SIZE):
         block = range(block_start, min(block_start + fec.BLOCK_SIZE, len(encoded)))
-        for i in rng.sample(list(block), min(fec.PARITY_SIZE // 2, len(block))):
+        for i in rng.sample(list(block), min(fec.DENIABLE_PARITY // 2, len(block))):
             encoded[i] ^= 0xFF
 
     assert fec.decode(bytes(encoded)) == data
@@ -36,7 +36,7 @@ def test_raises_past_the_correction_bound():
     encoded = bytearray(fec.encode(data))
 
     rng = random.Random(4)
-    for i in rng.sample(range(fec.BLOCK_SIZE), fec.PARITY_SIZE // 2 + 1):
+    for i in rng.sample(range(fec.BLOCK_SIZE), fec.DENIABLE_PARITY // 2 + 1):
         encoded[i] ^= 0xFF
 
     with pytest.raises(fec.FecError):

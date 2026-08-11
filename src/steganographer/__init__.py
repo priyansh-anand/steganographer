@@ -21,6 +21,7 @@ from .errors import (  # noqa: E402
     SignatureError,
     SteganographerError,
 )
+from .robust import hide_robust, reveal_robust, robust_capacity  # noqa: E402
 
 __all__ = [
     "CapacityError",
@@ -33,8 +34,11 @@ __all__ = [
     "capacity",
     "hide",
     "hide_deniable",
+    "hide_robust",
     "inspect",
     "reveal",
     "reveal_decoy",
+    "reveal_robust",
+    "robust_capacity",
     "reveal_file",
 ]

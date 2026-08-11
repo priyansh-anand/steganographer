@@ -3,8 +3,8 @@ import sys
 from getpass import getpass
 from pathlib import Path
 
-from . import __version__, analyze, core, deniable, signing
-from .errors import SteganographerError
+from . import __version__, analyze, core, deniable, robust, signing
+from .errors import DecryptionError, SteganographerError
 
 USAGE = """\
 steganographer -i IMAGE -h FILE [-o OUTPUT] [-m {lsb,endian}] [-p PASSWORD | -P] [--sign KEY]
@@ -19,10 +19,14 @@ EPILOG = """\
 modes:
   lsb     hide the file inside the pixels (output must be PNG, BMP or TIFF)
   endian  append the file after the end of the image (works with any format)
+  robust  survive the image being re-saved as JPEG; small capacity, see the README
 
 examples:
   steganographer -i cat.png -h notes.txt -m lsb -P
   steganographer -e -i cat_steg0.png
+
+  steganographer -i photo.jpg -h note.txt -m robust    # survives re-compression
+  steganographer -e -i photo_steg0.png
 
   steganographer -i cat.png -h notes.txt -m lsb -P --sign ~/.ssh/id_ed25519
   curl -s https://github.com/<user>.keys > friend.pub
@@ -58,7 +62,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("-o", dest="output", metavar="OUTPUT", help="output image (default: <image>_steg0.png)")
     parser.add_argument("-e", dest="extract", action="store_true", help="extract a hidden file instead of hiding one")
-    parser.add_argument("-m", dest="mode", choices=["lsb", "endian"], default=None, help="default: endian")
+    parser.add_argument("-m", dest="mode", choices=["lsb", "endian", "robust"], default=None, help="default: endian")
     parser.add_argument(
         "--adaptive",
         action="store_true",
@@ -125,6 +129,17 @@ def hide(
 ) -> None:
     data = Path(file).read_bytes()
     print(f"[*] {file} file size: {len(data)} bytes")
+
+    if mode == "robust":
+        if sign_key:
+            raise SteganographerError("robust mode doesn't support signing yet")
+        if adaptive:
+            raise SteganographerError("--adaptive can't be combined with robust mode")
+        written = robust.hide_robust(image, data, output, password=password, filename=Path(file).name)
+        print("[*] Hidden to survive JPEG recompression")
+        print(f"[+] Hidden file saved in {written}")
+        return
+
     if mode == "endian" and not password:
         print("[!] Warning: endian mode is easy to detect, consider using a password")
 
@@ -177,6 +192,9 @@ def extract(image: str, output: str | None, password: str | None, verify_key: st
                 _save_extracted(*revealed, output)
                 print("[*] This is a deniable image, found the decoy layer for this password")
                 return
+        # robust mode lives in the DCT coefficients, which core.inspect doesn't look at
+        if _extract_robust(image, password, output):
+            return
         hint = "" if password else ", if it was hidden with a password pass -p or -P"
         raise SteganographerError(f"no hidden file found in {image}{hint}")
 
@@ -195,6 +213,20 @@ def extract(image: str, output: str | None, password: str | None, verify_key: st
         print("[*] Not signed")
 
     _save_extracted(name, data, output)
+
+
+def _extract_robust(image: str, password: str | None, output: str | None) -> bool:
+    """Try robust mode. Returns True if it found and saved something."""
+    try:
+        revealed = robust.reveal_robust(image, password=password)
+    except DecryptionError:
+        # a robust payload is there but encrypted, and the password was wrong/missing
+        revealed = robust.reveal_robust(image, password=ask_password(confirm=False))
+    if revealed is None:
+        return False
+    print("[+] Found a file hidden to survive recompression (robust mode)")
+    _save_extracted(revealed.name, revealed.data, output)
+    return True
 
 
 def _save_extracted(name: str | None, data: bytes, output: str | None) -> None:
