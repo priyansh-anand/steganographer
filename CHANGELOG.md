@@ -28,9 +28,10 @@
   `robust` module, `-m robust`, and `hide_robust`/`reveal_robust`/`robust_capacity` in the Python API. Measured
   against real repeated recompression in `tests/test_robust.py`.
 - A browser demo at [priyansh-anand.github.io/steganographer](https://priyansh-anand.github.io/steganographer/),
-  running the real package client-side via Pyodide, no server involved: hide/reveal, signing, deniable hiding,
-  adaptive placement and `--analyze`, plus a Keys tab to generate an Ed25519 pair without the private key ever
-  leaving the tab. New `web/` directory and `.github/workflows/pages.yml`, deploying on every push to `master`.
+  running the real package client-side via Pyodide, no server involved: hide/reveal in every mode (lsb, endian
+  and robust), signing, deniable hiding, adaptive placement and `--analyze`, plus a Keys tab to generate an
+  Ed25519 pair without the private key ever leaving the tab. New `web/` directory and
+  `.github/workflows/pages.yml`, deploying on every push to `master`.
 - `--adaptive` (lsb mode with a password) fills the visually busiest parts of the image first instead of
   scattering uniformly, so a file that fits in the busy regions alone never touches the flat, low-noise parts
   where a change would stand out the most. Verified with `--analyze`: on a half flat, half textured test image,

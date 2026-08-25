@@ -7,10 +7,10 @@ there is no server. Deployed to GitHub Pages by
 [`.github/workflows/pages.yml`](../.github/workflows/pages.yml) on every push to `master` that touches `src/`,
 `web/` or `pyproject.toml`.
 
-Four tabs: **Hide** (lsb/endian, password, and under Advanced: signing, a decoy for deniable hiding, adaptive
-placement), **Reveal** (password, and under Advanced: requiring a specific signer), **Analyze** (the chi-square
-and RS checks from `--analyze`), and **Keys** (generates an Ed25519 pair, the private key never leaves the
-tab). It's the real package running, not a reimplementation of any of this in JavaScript.
+Four tabs: **Hide** (lsb/endian/robust, password, and under Advanced: signing, a decoy for deniable hiding,
+adaptive placement), **Reveal** (password, and under Advanced: requiring a specific signer), **Analyze** (the
+chi-square and RS checks from `--analyze`), and **Keys** (generates an Ed25519 pair, the private key never
+leaves the tab). It's the real package running, not a reimplementation of any of this in JavaScript.
 
 ## Developing locally
 

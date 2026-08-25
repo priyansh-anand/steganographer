@@ -79,6 +79,7 @@ let pyodide = null;
 let steg = null; // the imported `steganographer` package, as a JS-callable proxy
 let signingMod = null; // steganographer.signing
 let analyzeMod = null; // steganographer.analyze
+let robustMod = null; // steganographer.robust
 
 async function boot() {
   try {
@@ -100,6 +101,7 @@ async function boot() {
     steg = pyodide.pyimport("steganographer");
     signingMod = pyodide.pyimport("steganographer.signing");
     analyzeMod = pyodide.pyimport("steganographer.analyze");
+    robustMod = pyodide.pyimport("steganographer.robust");
 
     setStatus("Ready");
     statusEl.classList.add("ready");
@@ -239,8 +241,10 @@ $("hideBtn").addEventListener("click", async () => {
   if (!state.cover) return showMsg(msgEl, "Pick a cover image first.", "error");
   if (!state.toHide) return showMsg(msgEl, "Pick a file to hide first.", "error");
 
-  const useDecoy = $("decoyCheck").checked;
-  const mode = useDecoy ? "lsb" : document.querySelector('input[name="mode"]:checked').value;
+  const selectedMode = document.querySelector('input[name="mode"]:checked').value;
+  const useRobust = selectedMode === "robust";
+  const useDecoy = $("decoyCheck").checked && !useRobust;
+  const mode = useDecoy ? "lsb" : selectedMode;
   const password = $("hidePassword").value || null;
 
   if (useDecoy) {
@@ -255,11 +259,19 @@ $("hideBtn").addEventListener("click", async () => {
   btn.textContent = "Hiding…";
 
   try {
-    const suffix = mode === "lsb" ? ".png" : (state.cover.name.match(/\.[^.]+$/) || [".png"])[0];
+    const suffix = mode === "endian" ? (state.cover.name.match(/\.[^.]+$/) || [".png"])[0] : ".png";
     pyodide.FS.writeFile("/tmp/cover_in", state.cover.bytes);
 
     let outBytes, note;
-    if (useDecoy) {
+    if (useRobust) {
+      const data = pyodide.toPy(state.toHide.bytes).tobytes();
+      const outPath = robustMod.hide_robust.callKwargs("/tmp/cover_in", data, "/tmp/out.png", {
+        password: password,
+        filename: state.toHide.name,
+      });
+      outBytes = pyodide.FS.readFile(outPath.toString());
+      note = "survives recompression";
+    } else if (useDecoy) {
       const decoyData = pyodide.toPy(state.decoyFile.bytes).tobytes();
       const realData = pyodide.toPy(state.toHide.bytes).tobytes();
       const outPath = steg.hide_deniable.callKwargs(
@@ -295,9 +307,11 @@ $("hideBtn").addEventListener("click", async () => {
 
     showMsg(
       msgEl,
-      useDecoy
-        ? "Hidden. Extract with the real password for your file, the decoy password for the decoy."
-        : "Hidden. Extract it back with the Reveal tab and the same password.",
+      useRobust
+        ? "Hidden. This one survives being re-saved as JPEG — extract it back on the Reveal tab."
+        : useDecoy
+          ? "Hidden. Extract with the real password for your file, the decoy password for the decoy."
+          : "Hidden. Extract it back with the Reveal tab and the same password.",
       "ok"
     );
   } catch (err) {
@@ -347,15 +361,26 @@ $("revealBtn").addEventListener("click", async () => {
       bytes = new Uint8Array(revealed.data.toJs());
       note = revealed.signer ? `signed by ${signingMod.fingerprint(revealed.signer)}` : null;
     } catch (firstErr) {
-      // the normal format wasn't found (or didn't verify) -- if a password
-      // was given and verification wasn't required, it might be a decoy
-      // layer instead, which has no format of its own to fail loudly on
-      if (useVerify || !password) throw firstErr;
-      const decoy = steg.reveal_decoy("/tmp/stego_in", password);
-      if (decoy === undefined || decoy === null) throw firstErr;
-      name = decoy[0] || "extracted.bin";
-      bytes = new Uint8Array(decoy[1].toJs());
-      note = "decoy layer";
+      // the normal format wasn't found (or didn't verify) -- try the formats
+      // core.reveal_file doesn't look at: a deniable decoy layer (needs a
+      // password), then robust mode (its own DCT-domain format)
+      let recovered = null;
+      if (!useVerify && password) {
+        const decoy = steg.reveal_decoy("/tmp/stego_in", password);
+        if (decoy !== undefined && decoy !== null) {
+          recovered = { name: decoy[0] || "extracted.bin", bytes: new Uint8Array(decoy[1].toJs()), note: "decoy layer" };
+        }
+      }
+      if (!recovered && !useVerify) {
+        // reveal_robust returns null for a non-robust image, but throws
+        // DecryptionError if it IS robust and encrypted with the wrong password
+        const rob = robustMod.reveal_robust.callKwargs("/tmp/stego_in", { password: password });
+        if (rob !== undefined && rob !== null) {
+          recovered = { name: rob.name || "extracted.bin", bytes: new Uint8Array(rob.data.toJs()), note: "survived recompression" };
+        }
+      }
+      if (!recovered) throw firstErr;
+      ({ name, bytes, note } = recovered);
     }
 
     const blob = new Blob([bytes]);
