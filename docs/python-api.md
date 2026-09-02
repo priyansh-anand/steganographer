@@ -153,8 +153,8 @@ Returns `(name, data)` for the decoy layer, or `None`. The real file is read wit
 ```python
 steganographer.hide_deniable("cat.png", b"holiday photos", "decoy-pw", b"the real plan", "real-pw", "out.png")
 
-steganographer.reveal_decoy("out.png", "decoy-pw")      # (None, b'holiday photos')
-steganographer.reveal("out.png", password="real-pw")    # b'the real plan'
+steganographer.reveal_decoy("out.png", "decoy-pw")  # (None, b'holiday photos')
+steganographer.reveal("out.png", password="real-pw")  # b'the real plan'
 ```
 
 ## Robust mode
